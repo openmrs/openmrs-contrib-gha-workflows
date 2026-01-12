@@ -1,0 +1,29 @@
+name: Push Translations to Transifex
+
+on:
+  workflow_call:
+    inputs:
+      transifex_args:
+        description: 'Arguments to pass to the Transifex CLI'
+        type: string
+        default: 'push --source'
+    secrets:
+      TRANSIFEX_TOKEN:
+        required: true
+
+jobs:
+  push-translations-to-transifex:
+    name: Push translations to Transifex
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🌐 Push source file using Transifex client
+        uses: transifex/cli-action@v2
+        with:
+          token: ${{ secrets.TRANSIFEX_TOKEN }}
+          args: ${{ inputs.transifex_args }}

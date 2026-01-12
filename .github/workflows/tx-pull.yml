@@ -1,0 +1,79 @@
+name: Pull Translations from Transifex
+
+on:
+  workflow_call:
+    inputs:
+      transifex_args:
+        description: 'Arguments to pass to the Transifex CLI'
+        type: string
+        default: 'pull --force --all'
+      branch:
+        description: 'Branch name for the PR'
+        type: string
+        default: 'chore/update-transifex'
+      commit_message:
+        description: 'Commit message for the PR'
+        type: string
+        default: '(chore) Update translations from Transifex'
+      pr_title:
+        description: 'Title for the PR'
+        type: string
+        default: '(chore) Update translations from Transifex'
+      pr_body:
+        description: 'Body text for the PR'
+        type: string
+        default: 'Automated updates of translations pulled from Transifex'
+      author_name:
+        description: 'Git author name'
+        type: string
+        default: 'OpenMRS Bot'
+      author_email:
+        description: 'Git author email'
+        type: string
+        default: 'infrastructure@openmrs.org'
+    secrets:
+      TRANSIFEX_TOKEN:
+        required: true
+      BOT_GH_TOKEN:
+        required: true
+
+jobs:
+  pull-translations-from-transifex:
+    name: Pull translations from Transifex
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🌐 Pull translations using Transifex client
+        uses: transifex/cli-action@v2
+        with:
+          token: ${{ secrets.TRANSIFEX_TOKEN }}
+          args: ${{ inputs.transifex_args }}
+
+      - name: 📝 Create PR if necessary
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: ${{ inputs.commit_message }}
+          title: ${{ inputs.pr_title }}
+          body: ${{ inputs.pr_body }}
+          branch: ${{ inputs.branch }}
+          author: '${{ inputs.author_name }} <${{ inputs.author_email }}>'
+          token: ${{ secrets.BOT_GH_TOKEN }}
+
+      - name: ✅ Auto approve PR
+        if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
+        run: gh pr review --approve "${{ steps.cpr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: 🔀 Automerge PR
+        if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
+        run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ secrets.BOT_GH_TOKEN }}
