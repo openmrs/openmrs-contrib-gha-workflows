@@ -1,0 +1,56 @@
+name: Build OpenMRS Maven Module
+
+on:
+  workflow_call:
+    inputs:
+      java_versions:
+        description: 'Java versions to build against'
+        type: string
+        default: '["8"]'
+      java_distribution:
+        description: 'Java distribution'
+        type: string
+        default: 'temurin'
+      maven_args:
+        description: 'Maven Arguments'
+        type: string
+        default: 'clean install'
+      artifact_name:
+        description: 'Name for the uploaded artifact'
+        type: string
+        default: 'omod'
+      artifact_path:
+        description: 'Path to the OMOD file'
+        type: string
+        default: 'omod/target/*.omod'
+
+jobs:
+  build:
+    name: Build with Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        java: ${{ fromJSON(inputs.java_versions) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: ${{ inputs.java_distribution }}
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn --batch-mode ${{ inputs.maven_args }}
+
+      - name: Upload OMOD artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-java-${{ matrix.java }}
+          path: ${{ inputs.artifact_path }}
+          if-no-files-found: error
