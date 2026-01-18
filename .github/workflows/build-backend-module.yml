@@ -6,7 +6,9 @@ on:
       java_versions:
         description: 'Java versions to build against'
         type: string
-        default: '["8"]'
+      main_java_version:
+        description: 'Java version to use for publishing artifacts'
+        type: string
       java_distribution:
         description: 'Java distribution'
         type: string
@@ -15,14 +17,6 @@ on:
         description: 'Maven Arguments'
         type: string
         default: 'clean install'
-      artifact_name:
-        description: 'Name for the uploaded artifact'
-        type: string
-        default: 'omod'
-      artifact_path:
-        description: 'Path to the OMOD file'
-        type: string
-        default: 'omod/target/*.omod'
 
 jobs:
   build:
@@ -31,15 +25,16 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         java: ${{ fromJSON(inputs.java_versions) }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Java ${{ matrix.java }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ matrix.java }}
           distribution: ${{ inputs.java_distribution }}
@@ -48,9 +43,18 @@ jobs:
       - name: Build with Maven
         run: mvn --batch-mode ${{ inputs.maven_args }}
 
+      - name: Get Artifact Name
+        id: get_artifact_name
+        run: echo $(mvn help:evaluate -Dexpression=project.name -q -DforceStdout) | tr '[:upper:]' '[:lower:]' | { read name; echo "artifact_name=$name" } >> $GITHUB_OUTPUT
+
+      - name: Get Artifact Version
+        id: get_artifact_version
+        run: echo $(mvn help:evaluate -Dexpression=project.version -q -DforceStdout) | { read version; echo artifact_version=$version } >> $GITHUB_OUTPUT
+
       - name: Upload OMOD artifact
-        uses: actions/upload-artifact@v4
+        if: matrix.java == inputs.main_java_version
+        uses: actions/upload-artifact@v6
         with:
-          name: ${{ inputs.artifact_name }}-java-${{ matrix.java }}
-          path: ${{ inputs.artifact_path }}
+          name: ${{ steps.get_artifact_name.outputs.artifact_name }}-${{ steps.get_artifact_version.outputs.artifact_version }}
+          path: omod/target/${{ steps.get_artifact_name.outputs.artifact_name }}-${{ steps.get_artifact_version.outputs.artifact_version }}.omod
           if-no-files-found: error
