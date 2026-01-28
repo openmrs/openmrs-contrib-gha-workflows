@@ -1,0 +1,56 @@
+name: Build OpenMRS Maven Module
+
+on:
+  workflow_call:
+    inputs:
+      java_versions:
+        description: 'Java versions to build against (e.g. [8, 11, 17])'
+        type: string
+      main_java_version:
+        description: 'Java version to use for publishing artifacts (must be included in java_versions)'
+        type: string
+      java_distribution:
+        description: 'Java distribution'
+        type: string
+        default: 'temurin'
+      maven_args:
+        description: 'Maven Arguments'
+        type: string
+        default: 'clean install'
+
+jobs:
+  build:
+    name: Build with Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ${{ fromJSON(inputs.java_versions) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: ${{ inputs.java_distribution }}
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn --batch-mode ${{ inputs.maven_args }}
+
+      - name: Get OMOD file Name
+        id: get_omod_name
+        run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
+
+      - name: Upload OMOD artifact
+        if: matrix.java == fromJSON(inputs.main_java_version)
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.get_omod_name.outputs.final_name }}
+          path: omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod
+          if-no-files-found: error
