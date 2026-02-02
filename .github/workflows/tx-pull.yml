@@ -31,6 +31,14 @@ on:
         description: 'Git author email'
         type: string
         default: 'infrastructure@openmrs.org'
+      committer_name:
+        description: 'Git committer name'
+        type: string
+        default: 'OpenMRS Bot'
+      committer_email:
+        description: 'Git committer email'
+        type: string
+        default: 'infrastructure@openmrs.org'
     secrets:
       TRANSIFEX_TOKEN:
         required: true
@@ -64,6 +72,7 @@ jobs:
           body: ${{ inputs.pr_body }}
           branch: ${{ inputs.branch }}
           author: '${{ inputs.author_name }} <${{ inputs.author_email }}>'
+          committer: '${{ inputs.committer_name }} <${{ inputs.committer_email }}>'
           token: ${{ secrets.BOT_GH_TOKEN }}
 
       - name: ✅ Auto approve PR
