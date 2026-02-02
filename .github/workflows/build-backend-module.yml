@@ -48,8 +48,11 @@ jobs:
         run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
 
       - name: Generate checksums for OMOD
-        if: matrix.java == inputs.main_java_version
+        if: matrix.java == fromJSON(inputs.main_java_version)
         run: |
+          
+          set -euo pipefail
+          
           FILE="omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod"
 
           sha1sum   "$FILE" | awk '{print $1}' > "$FILE.sha1"
