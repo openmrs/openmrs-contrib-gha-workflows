@@ -47,10 +47,25 @@ jobs:
         id: get_omod_name
         run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
 
-      - name: Upload OMOD artifact
-        if: matrix.java == fromJSON(inputs.main_java_version)
+      - name: Generate checksums for OMOD
+        if: matrix.java == inputs.main_java_version
+        run: |
+          FILE="omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod"
+
+          sha1sum   "$FILE" | awk '{print $1}' > "$FILE.sha1"
+          md5sum    "$FILE" | awk '{print $1}' > "$FILE.md5"
+          sha256sum "$FILE" | awk '{print $1}' > "$FILE.sha256"
+          sha512sum "$FILE" | awk '{print $1}' > "$FILE.sha512"
+
+      - name: Upload OMOD + checksums
+        if: matrix.java == inputs.main_java_version
         uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.get_omod_name.outputs.final_name }}
-          path: omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod
+          path: |
+            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod
+            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha1
+            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.md5
+            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha256
+            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha512
           if-no-files-found: error
