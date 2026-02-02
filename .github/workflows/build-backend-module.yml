@@ -56,9 +56,7 @@ jobs:
           FILE="omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod"
 
           sha1sum   "$FILE" | awk '{print $1}' > "$FILE.sha1"
-          md5sum    "$FILE" | awk '{print $1}' > "$FILE.md5"
           sha256sum "$FILE" | awk '{print $1}' > "$FILE.sha256"
-          sha512sum "$FILE" | awk '{print $1}' > "$FILE.sha512"
 
       - name: Upload OMOD + checksums
         if: matrix.java == inputs.main_java_version
@@ -68,7 +66,5 @@ jobs:
           path: |
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha1
-            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.md5
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha256
-            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha512
           if-no-files-found: error
