@@ -54,12 +54,12 @@ jobs:
           set -euo pipefail
           
           FILE="omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod"
-
+          
           sha1sum   "$FILE" | awk '{print $1}' > "$FILE.sha1"
           sha256sum "$FILE" | awk '{print $1}' > "$FILE.sha256"
 
       - name: Upload OMOD + checksums
-        if: matrix.java == inputs.main_java_version
+        if: matrix.java == fromJSON(inputs.main_java_version)
         uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.get_omod_name.outputs.final_name }}
