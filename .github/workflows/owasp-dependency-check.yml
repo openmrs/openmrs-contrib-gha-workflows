@@ -1,0 +1,94 @@
+name: OWASP Dependency Check
+
+on:
+  workflow_call:
+    inputs:
+      java_version:
+        description: 'Java version to use for the build'
+        type: string
+        default: '21'
+      java_distribution:
+        description: 'Java distribution'
+        type: string
+        default: 'temurin'
+      maven_args:
+        description: 'Maven arguments for the build step'
+        type: string
+        default: 'clean install -DskipTests'
+      fail_on_cvss:
+        description: 'CVSS score threshold to fail the build (0-10)'
+        type: string
+        default: '6.2'
+      suppression_file:
+        description: 'Path to the dependency-check suppressions XML file'
+        type: string
+        default: 'dependency-check-suppressions.xml'
+      report_format:
+        description: 'Output report format (e.g. ALL, HTML, JSON, XML)'
+        type: string
+        default: 'ALL'
+      additional_args:
+        description: 'Additional arguments to pass to OWASP Dependency-Check'
+        type: string
+        default: '--enableRetired'
+    secrets:
+      NVD_API_KEY:
+        description: "NVD API key for faster vulnerability database updates (Not available to workflows triggered by pull requests from forks)"
+        required: false
+
+jobs:
+  dependency-check:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      SUPPRESSION_FILE: ${{ inputs.suppression_file }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java ${{ inputs.java_version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java_version }}
+          distribution: ${{ inputs.java_distribution }}
+          cache: maven
+
+      - name: Fetch default suppression file
+        run: |
+          if [ ! -f "${SUPPRESSION_FILE}" ]; then
+            echo "Suppression file not found. Downloading default..."
+            curl -sL https://raw.githubusercontent.com/openmrs/openmrs-contrib-gha-workflows/main/dependency-check-suppressions.xml \
+              -o "${SUPPRESSION_FILE}"
+          else
+            echo "Suppression file already exists."
+          fi
+
+      - name: Build project with Maven
+        run: mvn --batch-mode ${{ inputs.maven_args }}
+
+      - name: Run OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@1e54355a8b4c8abaa8cc7d0b70aa655a3bb15a6c
+        id: dependency-check
+        env:
+          JAVA_HOME: /opt/jdk
+        with:
+          project: ${{ github.event.repository.name }}
+          path: '.'
+          format: ${{ inputs.report_format }}
+          out: 'reports'
+          args: >
+            --failOnCVSS ${{ inputs.fail_on_cvss }}
+            --suppression ${{ env.SUPPRESSION_FILE }}
+            ${{ inputs.additional_args }}
+            ${{ secrets.NVD_API_KEY && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
+
+      - name: Upload Dependency Check report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Dependency Check report
+          path: ${{ github.workspace }}/reports
