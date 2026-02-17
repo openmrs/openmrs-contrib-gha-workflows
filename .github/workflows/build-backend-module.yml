@@ -17,6 +17,22 @@ on:
         description: 'Maven Arguments'
         type: string
         default: 'clean install'
+      run_owasp_check:
+        description: 'Whether to run the OWASP Dependency Check'
+        type: boolean
+        default: true
+      fail_on_cvss:
+        description: 'CVSS score threshold to fail the build (0-10)'
+        type: string
+        default: '6.2'
+      suppression_file:
+        description: 'Path to the dependency-check suppressions XML file'
+        type: string
+        default: 'dependency-check-suppressions.xml'
+    secrets:
+      NVD_API_KEY:
+        description: 'NVD API key for faster vulnerability database updates'
+        required: false
 
 jobs:
   build:
@@ -68,3 +84,14 @@ jobs:
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha1
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha256
           if-no-files-found: error
+
+  owasp-dependency-check:
+    if: ${{ inputs.run_owasp_check }}
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
+    with:
+      java_version: ${{ inputs.main_java_version }}
+      java_distribution: ${{ inputs.java_distribution }}
+      fail_on_cvss: ${{ inputs.fail_on_cvss }}
+      suppression_file: ${{ inputs.suppression_file }}
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
