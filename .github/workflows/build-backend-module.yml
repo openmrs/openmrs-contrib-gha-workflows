@@ -29,6 +29,10 @@ on:
         description: 'Path to the dependency-check suppressions XML file'
         type: string
         default: 'dependency-check-suppressions.xml'
+      owasp_additional_args:
+        description: 'Additional arguments to pass to OWASP Dependency-Check'
+        type: string
+        default: '--enableRetired'
     secrets:
       NVD_API_KEY:
         description: 'NVD API key for faster vulnerability database updates'
@@ -93,5 +97,6 @@ jobs:
       java_distribution: ${{ inputs.java_distribution }}
       fail_on_cvss: ${{ inputs.fail_on_cvss }}
       suppression_file: ${{ inputs.suppression_file }}
+      additional_args: ${{ inputs.owasp_additional_args }}
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
