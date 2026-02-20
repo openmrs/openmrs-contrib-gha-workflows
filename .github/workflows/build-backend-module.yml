@@ -33,6 +33,10 @@ on:
         description: 'Additional arguments to pass to OWASP Dependency-Check'
         type: string
         default: '--enableRetired'
+      upload_coverage:
+        description: 'Whether to upload coverage reports to Codecov'
+        type: boolean
+        default: true
     secrets:
       NVD_API_KEY:
         description: 'NVD API key for faster vulnerability database updates'
@@ -44,6 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +67,13 @@ jobs:
 
       - name: Build with Maven
         run: mvn --batch-mode ${{ inputs.maven_args }}
+
+      - name: Upload coverage to Codecov
+        if: ${{ inputs.upload_coverage && matrix.java == fromJSON(inputs.main_java_version) }}
+        uses: codecov/codecov-action@v5
+        continue-on-error: true
+        with:
+          use_oidc: true
 
       - name: Get OMOD file Name
         id: get_omod_name
@@ -100,3 +112,4 @@ jobs:
       additional_args: ${{ inputs.owasp_additional_args }}
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
