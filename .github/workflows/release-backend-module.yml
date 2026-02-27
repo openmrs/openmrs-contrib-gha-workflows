@@ -114,6 +114,7 @@ jobs:
           git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
           git config --global user.email "$GIT_USER_EMAIL"
           git config --global user.name "$GIT_USER_NAME"
+          export MAVEN_OPTS="-Denv.MAVEN_REPO_USERNAME=$MAVEN_REPO_USERNAME -Denv.MAVEN_REPO_API_KEY=$MAVEN_REPO_API_KEY"
           ./release-scripts/release-prepare-perform.sh \
             -r "$RELEASE_VERSION" \
             -d "$DEVELOPMENT_VERSION" \
