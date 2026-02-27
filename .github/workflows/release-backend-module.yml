@@ -107,6 +107,14 @@ jobs:
           </settings>
           EOF
 
+      - name: Clean up any leftover release artifacts
+        run: |
+          git tag -d "$RELEASE_VERSION" 2>/dev/null || true
+          git push origin ":refs/tags/$RELEASE_VERSION" 2>/dev/null || true
+          mvn release:clean -B 2>/dev/null || true
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+
       - name: Release prepare and perform
         run: |
           export MAVEN_HOME="$(mvn -v 2>/dev/null | grep 'Maven home:' | sed 's/Maven home: //')"
