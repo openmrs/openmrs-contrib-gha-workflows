@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
-      group: release
+      group: release-${{ github.repository }}
       cancel-in-progress: false
     permissions:
       contents: write
