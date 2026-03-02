@@ -71,6 +71,16 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
           DEVELOPMENT_VERSION: ${{ inputs.development_version }}
 
+      - name: Validate branch exists
+        run: |
+          if ! git ls-remote --exit-code --heads "https://github.com/${{ github.repository }}.git" "$BRANCH" > /dev/null 2>&1; then
+            echo "::error::Branch '$BRANCH' does not exist in ${{ github.repository }}"
+            exit 1
+          fi
+          echo "Branch validated: $BRANCH exists in ${{ github.repository }}"
+        env:
+          BRANCH: ${{ inputs.branch }}
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
