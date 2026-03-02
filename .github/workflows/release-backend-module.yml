@@ -27,6 +27,14 @@ on:
         description: 'Git committer email for release commits'
         type: string
         default: 'info@openmrs.org'
+      create_distro_pr:
+        description: 'Create a PR in openmrs-distro-referenceapplication to update the module version'
+        type: boolean
+        default: false
+      distro_property_name:
+        description: 'The property name in the distro pom.xml to update (e.g., fhir2.version). Required if create_distro_pr is true.'
+        type: string
+        default: ''
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -34,6 +42,9 @@ on:
       MAVEN_REPO_API_KEY:
         description: 'Maven repository API key / password'
         required: true
+      OMRS_BOT_GH_TOKEN:
+        description: 'GitHub token for the OpenMRS bot account, used to create the distro PR'
+        required: false
 
 jobs:
   release:
@@ -135,3 +146,55 @@ jobs:
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+
+  create-distro-pr:
+    name: Create Distro Ref App PR
+    runs-on: ubuntu-latest
+    needs: release
+    if: ${{ inputs.create_distro_pr }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate distro_property_name input
+        run: |
+          if [[ -z "$DISTRO_PROPERTY_NAME" ]]; then
+            echo "::error::distro_property_name input is required when create_distro_pr is true"
+            exit 1
+          fi
+        env:
+          DISTRO_PROPERTY_NAME: ${{ inputs.distro_property_name }}
+
+      - name: Checkout openmrs-distro-referenceapplication
+        uses: actions/checkout@v6
+        with:
+          repository: openmrs/openmrs-distro-referenceapplication
+          token: ${{ secrets.OMRS_BOT_GH_TOKEN }}
+          fetch-depth: 1
+
+      - name: Update version in distro pom.xml
+        run: |
+          sed -i "s|<${DISTRO_PROPERTY_NAME}>[^<]*</${DISTRO_PROPERTY_NAME}>|<${DISTRO_PROPERTY_NAME}>${RELEASE_VERSION}</${DISTRO_PROPERTY_NAME}>|" distro/pom.xml
+          if git diff --quiet; then
+            echo "::error::No change made to distro/pom.xml. Check that distro_property_name '${DISTRO_PROPERTY_NAME}' exists in distro/pom.xml."
+            exit 1
+          fi
+        env:
+          DISTRO_PROPERTY_NAME: ${{ inputs.distro_property_name }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.OMRS_BOT_GH_TOKEN }}
+          commit-message: "Bump ${{ inputs.distro_property_name }} to ${{ inputs.release_version }}"
+          author: "openmrs-bot <info@openmrs.org>"
+          committer: "openmrs-bot <info@openmrs.org>"
+          branch: "bump/${{ inputs.distro_property_name }}-${{ inputs.release_version }}"
+          delete-branch: true
+          title: "Bump ${{ inputs.distro_property_name }} to ${{ inputs.release_version }}"
+          body: |
+            Automated PR to update `${{ inputs.distro_property_name }}` to `${{ inputs.release_version }}` in `distro/pom.xml`.
+
+            Released from: ${{ github.server_url }}/${{ github.repository }}
+          labels: "release,automated-pr"
