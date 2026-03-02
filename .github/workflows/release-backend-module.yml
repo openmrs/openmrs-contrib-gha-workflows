@@ -30,6 +30,7 @@ on:
       branch:
         description: 'Branch to release from'
         type: string
+        required: false
         default: 'master'
     secrets:
       MAVEN_REPO_USERNAME:
@@ -71,15 +72,22 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
           DEVELOPMENT_VERSION: ${{ inputs.development_version }}
 
-      - name: Validate branch exists
+      - name: Validate branch
         run: |
-          if ! git ls-remote --exit-code --heads "https://github.com/${{ github.repository }}.git" "$BRANCH" > /dev/null 2>&1; then
-            echo "::error::Branch '$BRANCH' does not exist in ${{ github.repository }}"
+          # Ensure branch name contains only valid git branch characters
+          if [[ ! "$BRANCH" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+            echo "::error::Branch name '$BRANCH' contains invalid characters. Only alphanumeric, '.', '_', '/' and '-' are allowed."
             exit 1
           fi
-          echo "Branch validated: $BRANCH exists in ${{ github.repository }}"
+          # Verify the branch exists in the remote repository (requires public repo)
+          if ! git ls-remote --exit-code --heads "https://github.com/$REPO.git" "$BRANCH" > /dev/null 2>&1; then
+            echo "::error::Branch '$BRANCH' does not exist in $REPO"
+            exit 1
+          fi
+          echo "Branch validated: $BRANCH exists in $REPO"
         env:
           BRANCH: ${{ inputs.branch }}
+          REPO: ${{ github.repository }}
 
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -141,7 +149,7 @@ jobs:
           ./release-scripts/release-prepare-perform.sh \
             -r "$RELEASE_VERSION" \
             -d "$DEVELOPMENT_VERSION" \
-            -e "https://github.com/${{ github.repository }}.git" \
+            -e "https://github.com/$REPO.git" \
             -s
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -150,3 +158,4 @@ jobs:
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+          REPO: ${{ github.repository }}
