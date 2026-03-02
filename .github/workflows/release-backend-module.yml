@@ -1,8 +1,35 @@
 name: Release OpenMRS Maven Module
 
 on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to release from'
+        default: 'master'
+      release_version:
+        description: 'Release version (e.g., 1.3.3)'
+        required: true
+      development_version:
+        description: 'Next development version (e.g., 1.4.0-SNAPSHOT)'
+        required: true
+      java_version:
+        description: 'Java version to use for the release'
+        default: '8'
+      java_distribution:
+        description: 'Java distribution'
+        default: 'temurin'
+      git_user_name:
+        description: 'Git committer name for release commits'
+        default: 'openmrs-bot'
+      git_user_email:
+        description: 'Git committer email for release commits'
+        default: 'info@openmrs.org'
   workflow_call:
     inputs:
+      branch:
+        description: 'Branch to release from'
+        type: string
+        default: 'master'
       release_version:
         description: 'Release version (e.g., 1.3.3)'
         type: string
@@ -64,13 +91,14 @@ jobs:
           fi
           echo "Versions validated: release=$RELEASE_VERSION, development=$DEVELOPMENT_VERSION"
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-          DEVELOPMENT_VERSION: ${{ inputs.development_version }}
+          RELEASE_VERSION: ${{ inputs.release_version || github.event.inputs.release_version }}
+          DEVELOPMENT_VERSION: ${{ inputs.development_version || github.event.inputs.development_version }}
 
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ inputs.branch || github.event.inputs.branch }}
 
       - name: Checkout release scripts
         uses: actions/checkout@v6
@@ -80,11 +108,11 @@ jobs:
           sparse-checkout: release-prepare-perform.sh
           sparse-checkout-cone-mode: false
 
-      - name: Set up Java ${{ inputs.java_version }}
+      - name: Set up Java ${{ inputs.java_version || github.event.inputs.java_version }}
         uses: actions/setup-java@v5
         with:
-          java-version: ${{ inputs.java_version }}
-          distribution: ${{ inputs.java_distribution }}
+          java-version: ${{ inputs.java_version || github.event.inputs.java_version }}
+          distribution: ${{ inputs.java_distribution || github.event.inputs.java_distribution }}
           cache: maven
 
       - name: Configure Maven settings
@@ -113,7 +141,7 @@ jobs:
           git push origin ":refs/tags/$RELEASE_VERSION" 2>/dev/null || true
           mvn release:clean -B 2>/dev/null || true
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ inputs.release_version || github.event.inputs.release_version }}
 
       - name: Release prepare and perform
         run: |
@@ -129,9 +157,9 @@ jobs:
             -e "https://github.com/${{ github.repository }}.git" \
             -s
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-          DEVELOPMENT_VERSION: ${{ inputs.development_version }}
-          GIT_USER_NAME: ${{ inputs.git_user_name }}
-          GIT_USER_EMAIL: ${{ inputs.git_user_email }}
+          RELEASE_VERSION: ${{ inputs.release_version || github.event.inputs.release_version }}
+          DEVELOPMENT_VERSION: ${{ inputs.development_version || github.event.inputs.development_version }}
+          GIT_USER_NAME: ${{ inputs.git_user_name || github.event.inputs.git_user_name }}
+          GIT_USER_EMAIL: ${{ inputs.git_user_email || github.event.inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
