@@ -27,6 +27,10 @@ on:
         description: 'Git committer email for release commits'
         type: string
         default: 'info@openmrs.org'
+      branch:
+        description: 'Branch to release from'
+        type: string
+        default: 'master'
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -41,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
-      group: release-${{ github.repository }}
+      group: release-${{ github.repository }}-${{ inputs.branch }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -71,6 +75,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ inputs.branch }}
 
       - name: Checkout release scripts
         uses: actions/checkout@v6
