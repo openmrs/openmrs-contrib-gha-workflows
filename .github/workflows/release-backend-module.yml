@@ -27,6 +27,11 @@ on:
         description: 'Git committer email for release commits'
         type: string
         default: 'info@openmrs.org'
+      branch:
+        description: 'Branch to release from'
+        type: string
+        required: false
+        default: 'master'
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -41,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
-      group: release-${{ github.repository }}
+      group: release-${{ github.repository }}-${{ inputs.branch }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -67,10 +72,28 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
           DEVELOPMENT_VERSION: ${{ inputs.development_version }}
 
+      - name: Validate branch
+        run: |
+          # Ensure branch name contains only valid git branch characters
+          if [[ ! "$BRANCH" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+            echo "::error::Branch name '$BRANCH' contains invalid characters. Only alphanumeric, '.', '_', '/' and '-' are allowed."
+            exit 1
+          fi
+          # Verify the branch exists in the remote repository (requires public repo)
+          if ! git ls-remote --exit-code --heads "https://github.com/$REPO.git" "$BRANCH" > /dev/null 2>&1; then
+            echo "::error::Branch '$BRANCH' does not exist in $REPO"
+            exit 1
+          fi
+          echo "Branch validated: $BRANCH exists in $REPO"
+        env:
+          BRANCH: ${{ inputs.branch }}
+          REPO: ${{ github.repository }}
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ inputs.branch }}
 
       - name: Checkout release scripts
         uses: actions/checkout@v6
@@ -126,7 +149,7 @@ jobs:
           ./release-scripts/release-prepare-perform.sh \
             -r "$RELEASE_VERSION" \
             -d "$DEVELOPMENT_VERSION" \
-            -e "https://github.com/${{ github.repository }}.git" \
+            -e "https://github.com/$REPO.git" \
             -s
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -135,3 +158,4 @@ jobs:
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+          REPO: ${{ github.repository }}
