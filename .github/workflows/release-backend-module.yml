@@ -26,12 +26,17 @@ on:
       git_user_email:
         description: 'Git committer email for release commits'
         type: string
-        default: 'info@openmrs.org'
+        default: 'infrastructure@openmrs.org'
       branch:
         description: 'Branch to release from'
         type: string
         required: false
         default: 'master'
+      maven_server_id:
+        description: 'Maven server ID to use for deployment'
+        type: string
+        required: false
+        default: 'openmrs-repo-modules'
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -39,6 +44,9 @@ on:
       MAVEN_REPO_API_KEY:
         description: 'Maven repository API key / password'
         required: true
+      BOT_PAT:
+        description: 'Personal Access Token for bypassing branch protections'
+        required: false
 
 jobs:
   release:
@@ -67,6 +75,11 @@ jobs:
             echo "::error::Development version '$DEVELOPMENT_VERSION' is not valid semver (e.g., 1.4.0-SNAPSHOT)"
             exit 1
           fi
+
+          echo "### Release Parameters 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "- **Release Version:** \`$RELEASE_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Next Development Version:** \`$DEVELOPMENT_VERSION\`" >> $GITHUB_STEP_SUMMARY
+
           echo "Versions validated: release=$RELEASE_VERSION, development=$DEVELOPMENT_VERSION"
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
@@ -84,6 +97,9 @@ jobs:
             echo "::error::Branch '$BRANCH' does not exist in $REPO"
             exit 1
           fi
+
+          echo "- **Target Branch:** \`$BRANCH\`" >> $GITHUB_STEP_SUMMARY
+
           echo "Branch validated: $BRANCH exists in $REPO"
         env:
           BRANCH: ${{ inputs.branch }}
@@ -94,6 +110,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.branch }}
+          token: ${{ secrets.BOT_PAT || github.token }}
 
       - name: Checkout release scripts
         uses: actions/checkout@v6
@@ -109,31 +126,16 @@ jobs:
           java-version: ${{ inputs.java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
+          server-id: ${{ inputs.maven_server_id }}
+          server-username: MAVEN_REPO_USERNAME
+          server-password: MAVEN_REPO_API_KEY
 
-      - name: Configure Maven settings
+      - name: Verify tag does not exist
         run: |
-          mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml << 'EOF'
-          <settings>
-            <servers>
-              <server>
-                <id>openmrs-repo-modules</id>
-                <username>${env.MAVEN_REPO_USERNAME}</username>
-                <password>${env.MAVEN_REPO_API_KEY}</password>
-              </server>
-              <server>
-                <id>openmrs-repo-snapshots</id>
-                <username>${env.MAVEN_REPO_USERNAME}</username>
-                <password>${env.MAVEN_REPO_API_KEY}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
-
-      - name: Clean up any leftover release artifacts
-        run: |
-          git tag -d "$RELEASE_VERSION" 2>/dev/null || true
-          git push origin ":refs/tags/$RELEASE_VERSION" 2>/dev/null || true
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_VERSION already exists. Release aborted to prevent overwriting."
+            exit 1
+          fi
           mvn release:clean -B 2>/dev/null || true
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
