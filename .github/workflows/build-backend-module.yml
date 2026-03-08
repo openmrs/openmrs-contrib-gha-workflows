@@ -42,7 +42,7 @@ on:
         type: boolean
         default: true
       maven_server_id:
-        description: 'Maven server ID to use for SNAPSHOT deployment'
+        description: 'Maven server ID to use for SNAPSHOT deployment (must match the <snapshotRepository><id> in the project pom.xml)'
         type: string
         default: 'openmrs-repo-modules-snapshots'
     secrets:
@@ -91,7 +91,17 @@ jobs:
 
       - name: Get OMOD file Name
         id: get_omod_name
-        run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
+        run: |
+          mapfile -t OMOD_FILES < <(find omod/target -maxdepth 1 -name "*.omod")
+          if [ "${#OMOD_FILES[@]}" -eq 0 ]; then
+            echo "::error::No .omod file found in omod/target/"
+            exit 1
+          fi
+          if [ "${#OMOD_FILES[@]}" -gt 1 ]; then
+            echo "::error::Multiple .omod files found in omod/target/: ${OMOD_FILES[*]}"
+            exit 1
+          fi
+          echo "final_name=$(basename "${OMOD_FILES[0]}" .omod)" >> $GITHUB_OUTPUT
 
       - name: Generate checksums for OMOD
         if: matrix.java == fromJSON(inputs.main_java_version)
