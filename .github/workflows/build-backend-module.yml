@@ -118,7 +118,7 @@ jobs:
   deploy:
     name: Deploy SNAPSHOT to Maven
     needs: build
-    if: ${{ inputs.deploy_snapshots && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') }}
+    if: ${{ inputs.deploy_snapshots && github.head_ref == '' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
