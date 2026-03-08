@@ -37,9 +37,23 @@ on:
         description: 'Whether to upload coverage reports to Codecov. Requires the JaCoCo Maven plugin to be configured in the project pom.xml to generate coverage reports during the build.'
         type: boolean
         default: true
+      deploy_snapshots:
+        description: 'Whether to deploy SNAPSHOT artifacts to the Maven repository'
+        type: boolean
+        default: true
+      maven_server_id:
+        description: 'Maven server ID to use for SNAPSHOT deployment'
+        type: string
+        default: 'openmrs-repo-modules-snapshots'
     secrets:
       NVD_API_KEY:
         description: 'NVD API key for faster vulnerability database updates'
+        required: false
+      MAVEN_REPO_USERNAME:
+        description: 'Maven repository username'
+        required: false
+      MAVEN_REPO_API_KEY:
+        description: 'Maven repository API key / password'
         required: false
 
 jobs:
@@ -100,6 +114,31 @@ jobs:
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha1
             omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha256
           if-no-files-found: error
+
+  deploy:
+    name: Deploy SNAPSHOT to Maven
+    needs: build
+    if: ${{ inputs.deploy_snapshots && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java ${{ inputs.main_java_version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.main_java_version }}
+          distribution: ${{ inputs.java_distribution }}
+          cache: maven
+          server-id: ${{ inputs.maven_server_id }}
+          server-username: MAVEN_REPO_USERNAME
+          server-password: MAVEN_REPO_API_KEY
+
+      - name: Deploy SNAPSHOT to Maven
+        run: mvn --batch-mode deploy -DskipTests
+        env:
+          MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
+          MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
 
   owasp-dependency-check:
     if: ${{ inputs.run_owasp_check }}
