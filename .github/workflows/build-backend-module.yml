@@ -120,6 +120,8 @@ jobs:
     needs: build
     if: ${{ inputs.deploy_snapshots && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
