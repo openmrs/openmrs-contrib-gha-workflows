@@ -32,11 +32,16 @@ on:
         type: string
         required: false
         default: 'master'
-      maven_server_id:
-        description: 'Maven server ID to use for deployment'
+      maven_release_server_id:
+        description: 'Maven server ID to use for release deployment'
         type: string
         required: false
         default: 'openmrs-repo-modules'
+      maven_snapshot_server_id:
+        description: 'Maven server ID to use for snapshot deployment'
+        type: string
+        required: false
+        default: 'openmrs-repo-snapshots'
       create_github_release:
         description: 'Whether to create a GitHub Release with release notes after Maven release'
         type: boolean
@@ -130,9 +135,29 @@ jobs:
           java-version: ${{ inputs.java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
-          server-id: ${{ inputs.maven_server_id }}
-          server-username: MAVEN_REPO_USERNAME
-          server-password: MAVEN_REPO_API_KEY
+          overwrite-settings: false
+
+      - name: Set up Maven settings
+        run: |
+          mkdir -p "$HOME/.m2"
+          cat > "$HOME/.m2/settings.xml" << 'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+            xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>${{ inputs.maven_release_server_id }}</id>
+                <username>${env.MAVEN_REPO_USERNAME}</username>
+                <password>${env.MAVEN_REPO_API_KEY}</password>
+              </server>
+              <server>
+                <id>${{ inputs.maven_snapshot_server_id }}</id>
+                <username>${env.MAVEN_REPO_USERNAME}</username>
+                <password>${env.MAVEN_REPO_API_KEY}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
 
       - name: Verify tag does not exist
         run: |
