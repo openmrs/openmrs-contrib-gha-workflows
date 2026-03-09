@@ -174,6 +174,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Wait for tag to be reachable
+        run: |
+          MAX_RETRIES=5
+          DELAY=15
+          for i in $(seq 1 "$MAX_RETRIES"); do
+            if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$RELEASE_VERSION" > /dev/null 2>&1; then
+              echo "Tag $RELEASE_VERSION is reachable (attempt $i/$MAX_RETRIES)"
+              exit 0
+            fi
+            echo "Tag $RELEASE_VERSION not yet reachable (attempt $i/$MAX_RETRIES). Retrying in ${DELAY}s..."
+            sleep "$DELAY"
+          done
+          echo "::error::Tag $RELEASE_VERSION was not reachable after $MAX_RETRIES attempts"
+          exit 1
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          REPO: ${{ github.repository }}
+
       - name: Checkout code
         uses: actions/checkout@v6
         with:
