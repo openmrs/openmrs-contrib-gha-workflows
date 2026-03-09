@@ -134,11 +134,14 @@ jobs:
           server-username: MAVEN_REPO_USERNAME
           server-password: MAVEN_REPO_API_KEY
 
-      - name: Add snapshot repo credentials to Maven settings
-        run: |
-          SETTINGS_FILE="$HOME/.m2/settings.xml"
-          # Add credentials for openmrs-repo-snapshots so that SNAPSHOT deploys work
-          sed -i '/<\/servers>/i \    <server>\n      <id>openmrs-repo-snapshots</id>\n      <username>${env.MAVEN_REPO_USERNAME}</username>\n      <password>${env.MAVEN_REPO_API_KEY}</password>\n    </server>' "$SETTINGS_FILE"
+      - name: Set up Maven credentials for snapshot repo
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ inputs.java_version }}
+          distribution: ${{ inputs.java_distribution }}
+          server-id: openmrs-repo-snapshots
+          server-username: MAVEN_REPO_USERNAME
+          server-password: MAVEN_REPO_API_KEY
 
       - name: Verify tag does not exist
         run: |
