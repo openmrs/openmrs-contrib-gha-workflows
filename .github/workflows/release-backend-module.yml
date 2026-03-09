@@ -134,6 +134,12 @@ jobs:
           server-username: MAVEN_REPO_USERNAME
           server-password: MAVEN_REPO_API_KEY
 
+      - name: Add snapshot repo credentials to Maven settings
+        run: |
+          SETTINGS_FILE="$HOME/.m2/settings.xml"
+          # Add credentials for openmrs-repo-snapshots so that SNAPSHOT deploys work
+          sed -i '/<\/servers>/i \    <server>\n      <id>openmrs-repo-snapshots</id>\n      <username>${env.MAVEN_REPO_USERNAME}</username>\n      <password>${env.MAVEN_REPO_API_KEY}</password>\n    </server>' "$SETTINGS_FILE"
+
       - name: Verify tag does not exist
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
