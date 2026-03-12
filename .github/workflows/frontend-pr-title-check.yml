@@ -2,21 +2,32 @@ name: Validate PR title
 
 on:
   workflow_call:
+    inputs:
+      pr-title:
+        description: The pull request title
+        required: true
+        type: string
+      pr-author-login:
+        description: The login of the pull request author
+        required: true
+        type: string
+      pr-author-type:
+        description: The type of the pull request author (e.g. User, Bot)
+        required: true
+        type: string
 
 jobs:
   pr-title:
     name: Validate PR title
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
 
     steps:
       - name: Validate pull request title
         shell: bash
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
-          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          PR_TITLE: ${{ inputs.pr-title }}
+          PR_AUTHOR_LOGIN: ${{ inputs.pr-author-login }}
+          PR_AUTHOR_TYPE: ${{ inputs.pr-author-type }}
         run: |
           python3 - <<'PY'
           import os
@@ -60,26 +71,18 @@ jobs:
               print(f'Skipping PR title validation for bot author {author_login}.')
               sys.exit(0)
 
-          if ticketed_pattern.fullmatch(title):
+          if ticketed_pattern.fullmatch(title) or breaking_ticketed_pattern.fullmatch(title):
               print('Ticketed PR title format is valid.')
               sys.exit(0)
 
-          if breaking_ticketed_pattern.fullmatch(title):
-              print('Breaking-change PR title format is valid.')
-              sys.exit(0)
+          if breaking_ticket_like_pattern.match(title):
+              fail("BREAKING titles with a ticket must use the exact format '(BREAKING) TICKET: Sentence case summary' (note the colon and space after the ticket number).")
 
           if ticket_like_pattern.match(title):
-              fail("Ticketed titles must use the exact format '(type) TICKET: Sentence case summary'.")
+              fail("Ticketed titles must use the exact format '(type) TICKET: Sentence case summary' (note the colon and space after the ticket number).")
 
-          if breaking_ticket_like_pattern.match(title):
-              fail("BREAKING titles must use either '(BREAKING) TICKET: Sentence case summary' or '(BREAKING) Sentence case summary'.")
-
-          if ticketless_pattern.fullmatch(title):
+          if ticketless_pattern.fullmatch(title) or breaking_ticketless_pattern.fullmatch(title):
               print('Ticketless PR title format is valid.')
-              sys.exit(0)
-
-          if breaking_ticketless_pattern.fullmatch(title):
-              print('Breaking-change PR title format is valid.')
               sys.exit(0)
 
           fail('PR title does not match the canonical OpenMRS format.')
