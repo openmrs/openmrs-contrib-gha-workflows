@@ -1,0 +1,89 @@
+name: Validate PR title
+
+on:
+  workflow_call:
+    inputs:
+      pr-title:
+        description: The pull request title
+        required: true
+        type: string
+      pr-author-login:
+        description: The login of the pull request author
+        required: true
+        type: string
+      pr-author-type:
+        description: The type of the pull request author (e.g. User, Bot)
+        required: true
+        type: string
+
+jobs:
+  pr-title:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate pull request title
+        shell: bash
+        env:
+          PR_TITLE: ${{ inputs.pr-title }}
+          PR_AUTHOR_LOGIN: ${{ inputs.pr-author-login }}
+          PR_AUTHOR_TYPE: ${{ inputs.pr-author-type }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          title = os.environ['PR_TITLE'].strip()
+          author_login = os.environ.get('PR_AUTHOR_LOGIN', '')
+          author_type = os.environ.get('PR_AUTHOR_TYPE', '')
+          allowed_types = 'feat|fix|chore|docs|test'
+
+          ticketed_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z][A-Z0-9]+-\d+: [A-Z].+')
+          ticketless_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z].+')
+          ticket_like_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z][A-Z0-9]+-\d+\b')
+          breaking_ticketed_pattern = re.compile(r'^\(BREAKING\) [A-Z][A-Z0-9]+-\d+: [A-Z].+')
+          breaking_ticketless_pattern = re.compile(r'^\(BREAKING\) [A-Z].+')
+          breaking_ticket_like_pattern = re.compile(r'^\(BREAKING\) [A-Z][A-Z0-9]+-\d+\b')
+
+          def fail(reason: str) -> None:
+              print('PR title validation failed.')
+              print()
+              print(f'Reason: {reason}')
+              print(f"Received title: {title!r}")
+              print()
+              print('Accepted formats:')
+              print('- (type) TICKET: Sentence case summary')
+              print('- (type) Sentence case summary')
+              print('- (BREAKING) TICKET: Sentence case summary')
+              print('- (BREAKING) Sentence case summary')
+              print()
+              print('Allowed types: BREAKING, feat, fix, chore, docs, test')
+              print()
+              print('Passing examples:')
+              print('- (fix) O3-4522: Fix run report date format error')
+              print('- (feat) O3-2724: Move overlays into the framework')
+              print('- (BREAKING) O3-9000: Replace the public orders API contract')
+              print('- (docs) Fix README examples')
+              sys.exit(1)
+
+          if author_type == 'Bot' or author_login.endswith('[bot]') or author_login.endswith('-bot'):
+              print(f'Skipping PR title validation for bot author {author_login}.')
+              sys.exit(0)
+
+          if ticketed_pattern.fullmatch(title) or breaking_ticketed_pattern.fullmatch(title):
+              print('Ticketed PR title format is valid.')
+              sys.exit(0)
+
+          if breaking_ticket_like_pattern.match(title):
+              fail("BREAKING titles with a ticket must use the exact format '(BREAKING) TICKET: Sentence case summary' (note the colon and space after the ticket number).")
+
+          if ticket_like_pattern.match(title):
+              fail("Ticketed titles must use the exact format '(type) TICKET: Sentence case summary' (note the colon and space after the ticket number).")
+
+          if ticketless_pattern.fullmatch(title) or breaking_ticketless_pattern.fullmatch(title):
+              print('Ticketless PR title format is valid.')
+              sys.exit(0)
+
+          fail('PR title does not match the canonical OpenMRS format.')
+          PY
