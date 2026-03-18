@@ -98,7 +98,7 @@ jobs:
           path: ${{ github.workspace }}/reports
 
       - name: Checkout dependency vulnerability dashboard repo
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/checkout@v6
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
@@ -106,13 +106,13 @@ jobs:
           path: dashboard-repo
 
       - name: Copy report into dependency vulnerability dashboard repo
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           mkdir -p dashboard-repo/data
           cp reports/dependency-check-report.json dashboard-repo/data/${{ github.event.repository.name }}.json
 
       - name: Commit and push report
-        if: always()
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
           cd dashboard-repo
           git config user.name "OpenMRS Bot"
