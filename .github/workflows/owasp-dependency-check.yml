@@ -107,7 +107,7 @@ jobs:
           token: ${{ secrets.OMRS_BOT_GH_TOKEN }}
           path: dashboard-repo
 
-      - name: Copy report into dashboard repo
+      - name: Copy report into dependency vulnerability dashboard repo
         if: always()
         run: |
           mkdir -p dashboard-repo/data
