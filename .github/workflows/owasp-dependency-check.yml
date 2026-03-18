@@ -92,3 +92,35 @@ jobs:
         with:
           name: Dependency Check report
           path: ${{ github.workspace }}/reports
+
+      - name: Extract JSON report
+        run: |
+          ls reports
+          cp reports/dependency-check-report.json dependency-check-report.json
+
+      - name: Checkout dependency vulnerability dashboard repo
+        uses: actions/checkout@v6
+        with:
+          repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
+          token: ${{ secrets.OMRS_BOT_GH_TOKEN }}
+          path: dashboard-repo
+
+      - name: Copy report into dashboard repo
+        run: |
+          mkdir -p dashboard-repo/data
+          cp dependency-check-report.json dashboard-repo/data/${{ github.event.repository.name }}.json
+
+      - name: Commit and push report
+        run: |
+          cd dashboard-repo
+          git config user.name "OpenMRS Bot"
+          git config user.email "infrastructure@openmrs.org"
+
+          git add data/${{ github.event.repository.name }}.json
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update dependency check report for ${{ github.event.repository.name }}"
+            git push
+          fi
