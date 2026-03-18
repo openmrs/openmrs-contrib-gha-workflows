@@ -94,11 +94,13 @@ jobs:
           path: ${{ github.workspace }}/reports
 
       - name: Extract JSON report
+        if: always()
         run: |
           ls reports
           cp reports/dependency-check-report.json dependency-check-report.json
 
       - name: Checkout dependency vulnerability dashboard repo
+        if: always()
         uses: actions/checkout@v6
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
@@ -106,11 +108,13 @@ jobs:
           path: dashboard-repo
 
       - name: Copy report into dashboard repo
+        if: always()
         run: |
           mkdir -p dashboard-repo/data
           cp dependency-check-report.json dashboard-repo/data/${{ github.event.repository.name }}.json
 
       - name: Commit and push report
+        if: always()
         run: |
           cd dashboard-repo
           git config user.name "OpenMRS Bot"
