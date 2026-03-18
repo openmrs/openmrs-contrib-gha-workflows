@@ -55,6 +55,9 @@ on:
       MAVEN_REPO_API_KEY:
         description: 'Maven repository API key / password'
         required: false
+      OMRS_BOT_GH_TOKEN:
+        description: "GitHub token for pushing to the dashboard repo"
+        required: false
 
 jobs:
   build:
@@ -145,7 +148,7 @@ jobs:
 
   owasp-dependency-check:
     if: ${{ inputs.run_owasp_check }}
-    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@vulnerability-dashboard
     with:
       java_version: ${{ inputs.main_java_version }}
       java_distribution: ${{ inputs.java_distribution }}
@@ -154,4 +157,5 @@ jobs:
       additional_args: ${{ inputs.owasp_additional_args }}
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      OMRS_BOT_GH_TOKEN: ${{ secrets.OMRS_BOT_GH_TOKEN }}
 
