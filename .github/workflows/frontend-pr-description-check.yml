@@ -1,0 +1,124 @@
+name: Validate PR description
+
+on:
+  workflow_call:
+    inputs:
+      pr-body:
+        description: The pull request body
+        required: true
+        type: string
+      pr-author-login:
+        description: The login of the pull request author
+        required: true
+        type: string
+      pr-author-type:
+        description: The type of the pull request author (e.g. User, Bot)
+        required: true
+        type: string
+
+jobs:
+  pr-description:
+    name: Validate PR description
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate pull request description
+        shell: bash
+        env:
+          PR_BODY: ${{ inputs.pr-body }}
+          PR_AUTHOR_LOGIN: ${{ inputs.pr-author-login }}
+          PR_AUTHOR_TYPE: ${{ inputs.pr-author-type }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          body = os.environ.get('PR_BODY', '').replace('\r\n', '\n')
+          author_login = os.environ.get('PR_AUTHOR_LOGIN', '')
+          author_type = os.environ.get('PR_AUTHOR_TYPE', '')
+
+          # Skip validation for bots
+          if author_type == 'Bot' or author_login.endswith('[bot]') or author_login.endswith('-bot'):
+              print(f'Skipping PR description validation for bot author {author_login}.')
+              sys.exit(0)
+
+          # Rule 0: Non-empty body
+          if not body.strip():
+              print('PR description is missing. Please fill in the PR template.')
+              sys.exit(1)
+
+          # Rule 1: All required section headers must be present
+          required_headers = [
+              '## Requirements',
+              '## Summary',
+              '## Screenshots',
+              '## Related Issue',
+              '## Other',
+          ]
+          lines = body.split('\n')
+          missing_headers = []
+          for header in required_headers:
+              if not any(line.startswith(header) for line in lines):
+                  missing_headers.append(header)
+
+          if missing_headers:
+              print('PR description is missing required section headers.')
+              print()
+              print('Missing sections: ' + ', '.join(missing_headers))
+              print()
+              print('The PR template must be used. Required headers:')
+              for h in required_headers:
+                  print(f'  - {h}')
+              sys.exit(1)
+
+          # Rule 2: First checkbox must be checked
+          first_checkbox = next(
+              (line.strip() for line in lines if re.match(r'- \[[ x]\]', line.strip())),
+              None
+          )
+          if first_checkbox is None or not first_checkbox.startswith('- [x]'):
+              print('PR description check failed.')
+              print()
+              print('Reason: The first checkbox in the Requirements section must be checked.')
+              print()
+              print('Expected: - [x] This PR has a title that briefly describes the work done...')
+              if first_checkbox:
+                  print(f'Found:    {first_checkbox}')
+              else:
+                  print('Found:    no checkboxes')
+              print()
+              print('Please check the first item in the Requirements checklist.')
+              sys.exit(1)
+
+          # Rule 3: Summary section must have actual content
+          # Extract text between ## Summary and the next ## header
+          in_summary = False
+          summary_lines = []
+          for line in lines:
+              if line.startswith('## Summary'):
+                  in_summary = True
+                  continue
+              if in_summary:
+                  if line.startswith('## '):
+                      break
+                  summary_lines.append(line)
+
+          # Strip blank lines and HTML comments (single-line and multi-line)
+          summary_text = '\n'.join(summary_lines)
+          # Remove multi-line HTML comments
+          summary_text = re.sub(r'<!--.*?-->', '', summary_text, flags=re.DOTALL)
+          content_lines = [l for l in summary_text.split('\n') if l.strip()]
+
+          if not content_lines:
+              print('PR description check failed.')
+              print()
+              print('Reason: The Summary section must contain an actual description.')
+              print('The default placeholder comment does not count as content.')
+              print()
+              print('Please describe what problems your PR addresses under ## Summary.')
+              sys.exit(1)
+
+          print('PR description is valid.')
+          sys.exit(0)
+          PY
