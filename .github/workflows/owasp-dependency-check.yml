@@ -35,10 +35,10 @@ on:
       NVD_API_KEY:
         description: "NVD API key for faster vulnerability database updates (Not available to workflows triggered by pull requests from forks)"
         required: false
-      OMRS_BOT_GH_TOKEN:
+      BOT_GH_TOKEN:
         description: "GitHub token for pushing to the dashboard repo"
         required: false
-      
+
 
 jobs:
   dependency-check:
