@@ -102,7 +102,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
-          token: ${{ secrets.OMRS_BOT_GH_TOKEN }}
+          token: ${{ secrets.BOT_GH_TOKEN }}
           path: dashboard-repo
 
       - name: Copy report into dependency vulnerability dashboard repo
