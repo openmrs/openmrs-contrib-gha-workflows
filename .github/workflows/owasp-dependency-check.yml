@@ -7,6 +7,10 @@ on:
         description: 'Java version to use for the build'
         type: string
         default: '21'
+      node_version:
+        description: 'Node.js version to use for the build'
+        type: string
+        default: '22.x'
       java_distribution:
         description: 'Java distribution'
         type: string
@@ -67,7 +71,7 @@ jobs:
       - name: Fail if project type is unknown
         if: steps.detect.outputs.type == 'unknown'
         run: |
-          echo "❌ Could not detect project type. Expected pom.xml or package.json at repo root."
+          echo "Could not detect project type. Expected pom.xml or package.json at repo root."
           exit 1
 
       - name: Set up Java ${{ inputs.java_version }}
@@ -82,8 +86,8 @@ jobs:
         if: steps.detect.outputs.type == 'node'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: ${{ inputs.node_version }}
+          cache: yarn
 
       - name: Fetch default suppression file
         run: |
@@ -98,10 +102,6 @@ jobs:
       - name: Build project with Maven
         if: steps.detect.outputs.type == 'java'
         run: mvn --batch-mode ${{ inputs.maven_args }}
-
-      - name: Install Node dependencies
-        if: steps.detect.outputs.type == 'node'
-        run: yarn install --immutable
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@1e54355a8b4c8abaa8cc7d0b70aa655a3bb15a6c
@@ -118,7 +118,7 @@ jobs:
             --suppression ${{ env.SUPPRESSION_FILE }}
             ${{ inputs.additional_args }}
             ${{ secrets.NVD_API_KEY && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
-            ${{ steps.detect.outputs.type == 'node' && '--scan node_modules --scan yarn.lock --exclude "**/packages/**"' || '' }}
+            ${{ steps.detect.outputs.type == 'node' && '--exclude "**/packages/**"' || '' }}
 
       - name: Upload Dependency Check report
         if: always()
