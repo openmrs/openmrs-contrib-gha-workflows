@@ -108,7 +108,7 @@ jobs:
       # ⚛️ Install Node deps
       - name: Install Node dependencies
         if: steps.detect.outputs.type == 'node'
-        run: npm ci
+        run: yarn install --immutable
 
       # 🔐 OWASP scan
       - name: Run OWASP Dependency-Check
