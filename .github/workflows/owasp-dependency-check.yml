@@ -39,7 +39,6 @@ on:
         description: "GitHub token for pushing to the dashboard repo"
         required: false
 
-
 jobs:
   dependency-check:
     name: OWASP Dependency Check
@@ -54,13 +53,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # 🔍 Detect project type
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "type=java" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      # Fail if unknown
+      - name: Fail if project type is unknown
+        if: steps.detect.outputs.type == 'unknown'
+        run: |
+          echo "❌ Could not detect project type. Expected pom.xml or package.json at repo root."
+          exit 1
+
+      # ☕ Java setup
       - name: Set up Java ${{ inputs.java_version }}
+        if: steps.detect.outputs.type == 'java'
         uses: actions/setup-java@v5
         with:
           java-version: ${{ inputs.java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
 
+      # ⚛️ Node setup
+      - name: Set up Node.js
+        if: steps.detect.outputs.type == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 📄 Suppression file
       - name: Fetch default suppression file
         run: |
           if [ ! -f "${SUPPRESSION_FILE}" ]; then
@@ -71,9 +100,17 @@ jobs:
             echo "Suppression file already exists."
           fi
 
+      # ☕ Build Java
       - name: Build project with Maven
+        if: steps.detect.outputs.type == 'java'
         run: mvn --batch-mode ${{ inputs.maven_args }}
 
+      # ⚛️ Install Node deps
+      - name: Install Node dependencies
+        if: steps.detect.outputs.type == 'node'
+        run: npm ci
+
+      # 🔐 OWASP scan
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@1e54355a8b4c8abaa8cc7d0b70aa655a3bb15a6c
         id: dependency-check
