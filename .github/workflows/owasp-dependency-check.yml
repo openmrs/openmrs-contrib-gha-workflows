@@ -7,6 +7,10 @@ on:
         description: 'Java version to use for the build'
         type: string
         default: '21'
+      node_version:
+        description: 'Node.js version to use for the build'
+        type: string
+        default: '22.x'
       java_distribution:
         description: 'Java distribution'
         type: string
@@ -39,7 +43,6 @@ on:
         description: "GitHub token for pushing to the dashboard repo"
         required: false
 
-
 jobs:
   dependency-check:
     name: OWASP Dependency Check
@@ -54,12 +57,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Detect project type
+        id: detect
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "type=java" >> $GITHUB_OUTPUT
+          elif [ -f "package.json" ]; then
+            echo "type=node" >> $GITHUB_OUTPUT
+          else
+            echo "type=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail if project type is unknown
+        if: steps.detect.outputs.type == 'unknown'
+        run: |
+          echo "Could not detect project type. Expected pom.xml or package.json at repo root."
+          exit 1
+
       - name: Set up Java ${{ inputs.java_version }}
+        if: steps.detect.outputs.type == 'java'
         uses: actions/setup-java@v5
         with:
           java-version: ${{ inputs.java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
+
+      - name: Set up Node.js
+        if: steps.detect.outputs.type == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
 
       - name: Fetch default suppression file
         run: |
@@ -72,6 +99,7 @@ jobs:
           fi
 
       - name: Build project with Maven
+        if: steps.detect.outputs.type == 'java'
         run: mvn --batch-mode ${{ inputs.maven_args }}
 
       - name: Run OWASP Dependency-Check
@@ -89,6 +117,7 @@ jobs:
             --suppression ${{ env.SUPPRESSION_FILE }}
             ${{ inputs.additional_args }}
             ${{ secrets.NVD_API_KEY && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
+            ${{ steps.detect.outputs.type == 'node' && '--exclude "**/packages/**"' || '' }}
 
       - name: Upload Dependency Check report
         if: always()
