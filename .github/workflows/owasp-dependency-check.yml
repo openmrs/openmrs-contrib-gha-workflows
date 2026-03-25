@@ -126,7 +126,7 @@ jobs:
             --suppression ${{ env.SUPPRESSION_FILE }}
             ${{ inputs.additional_args }}
             ${{ secrets.NVD_API_KEY && format('--nvdApiKey {0}', secrets.NVD_API_KEY) || '' }}
-            ${{ steps.detect.outputs.type == 'node' && '--disableNodeJS --enableNodeAudit --scan yarn.lock' || '' }}
+              ${{ steps.detect.outputs.type == 'node' && '--scan node_modules --scan yarn.lock --exclude "**/packages/**"' || '' }}
 
       - name: Upload Dependency Check report
         if: always()
