@@ -87,7 +87,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version }}
-          cache: yarn
 
       - name: Fetch default suppression file
         run: |
