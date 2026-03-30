@@ -50,16 +50,16 @@ jobs:
 
           # Rule 1: All required section headers must be present
           required_headers = [
-              '## Requirements',
-              '## Summary',
-              '## Screenshots',
-              '## Related Issue',
-              '## Other',
+              'Requirements',
+              'Summary',
+              'Screenshots',
+              'Related Issue',
+              'Other',
           ]
           lines = body.split('\n')
           missing_headers = []
           for header in required_headers:
-              if not any(line.startswith(header) for line in lines):
+              if not any(re.match(r'^#{1,6}\s+' + re.escape(header) + r'\s*$', line) for line in lines):
                   missing_headers.append(header)
 
           if missing_headers:
@@ -92,15 +92,15 @@ jobs:
               sys.exit(1)
 
           # Rule 3: Summary section must have actual content
-          # Extract text between ## Summary and the next ## header
+          # Extract text between the Summary header and the next header
           in_summary = False
           summary_lines = []
           for line in lines:
-              if line.startswith('## Summary'):
+              if re.match(r'^#{1,6}\s+Summary\s*$', line):
                   in_summary = True
                   continue
               if in_summary:
-                  if line.startswith('## '):
+                  if re.match(r'^#{1,6}\s+', line):
                       break
                   summary_lines.append(line)
 
