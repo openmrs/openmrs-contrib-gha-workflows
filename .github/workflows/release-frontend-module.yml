@@ -51,6 +51,9 @@ on:
       NPM_AUTH_TOKEN:
         description: 'NPM authentication token for publishing'
         required: true
+      BOT_PAT:
+        description: 'GitHub PAT with actions:write permission on openmrs-distro-referenceapplication for triggering the frontend Docker image build'
+        required: false
 
 env:
   TURBO_API: 'http://127.0.0.1:9080'
@@ -65,15 +68,13 @@ jobs:
     if: >-
       github.event_name == 'push'
       && github.repository_owner == 'openmrs'
+      && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -95,7 +96,9 @@ jobs:
       - name: Compute pre-release version
         id: version
         run: |
-          BASE_VERSION=$(node -e "console.log(require('semver').inc(require('./package.json').version, 'patch'))")
+          CURRENT_VERSION=$(node -e "console.log(require('./package.json').version)")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%%-*}"
+          BASE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
           if [ "${{ github.ref_name }}" = "main" ] || ! ${{ inputs.support_patch_branches }}; then
             echo "version=${BASE_VERSION}-pre.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           else
@@ -152,7 +155,7 @@ jobs:
       - name: Trigger RefApp Frontend Docker Image Build
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.BOT_PAT }}
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: 'openmrs',
@@ -170,9 +173,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
