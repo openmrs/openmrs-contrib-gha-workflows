@@ -114,7 +114,7 @@ jobs:
         run: ${{ inputs.build_command }}
 
       - name: Configure Git
-        run: git config user.email "info@openmrs.org" && git config user.name "OpenMRS CI"
+        run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
 
       - name: Commit version changes
         run: git add . && git commit -m "Prerelease version" --no-verify
