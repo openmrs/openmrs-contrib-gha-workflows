@@ -17,7 +17,7 @@
     official module), the dependency-check scanner may incorrectly flag project's JARs as
     vulnerable due to the shared "openmrs" namespace. If a new CVE appears in a scan report:
 
-      1. Investigate whether the CVE actually applies to this artifact (see the affected
+      1. Investigate whether the CVE actually applies to the artifact (see the affected
          component and version range in the CVE details).
       2. If it is confirmed to be a false positive (i.e. the vulnerable code is in openmrs-core,
          the Reference Application, or a different module), add a new <suppress> block below
