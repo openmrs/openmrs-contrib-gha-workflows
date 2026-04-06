@@ -10,6 +10,23 @@
     graphic logo is a trademark of OpenMRS Inc.
 
 -->
+<!--
+    MAINTAINER NOTE — OpenMRS CVE Suppressions
+    ============================================
+    When new CVEs are published against OpenMRS (openmrs-core, Reference Application, or any
+    official module), the dependency-check scanner may incorrectly flag project's JARs as
+    vulnerable due to the shared "openmrs" namespace. If a new CVE appears in a scan report:
+
+      1. Investigate whether the CVE actually applies to this artifact (see the affected
+         component and version range in the CVE details).
+      2. If it is confirmed to be a false positive (i.e. the vulnerable code is in openmrs-core,
+         the Reference Application, or a different module), add a new <suppress> block below
+         with the CVE ID and a note explaining why it does not apply.
+      3. Do NOT suppress it until you have checked — the intent of suppressing CVEs individually
+         (rather than by package/namespace) is specifically to avoid accidentally suppressing a
+         CVE that legitimately affects one of this project's actual OpenMRS dependencies.
+         Suppressing by CVE ID after manual review keeps that safety intact.
+-->
 <suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
     <suppress>
         <notes><![CDATA[
