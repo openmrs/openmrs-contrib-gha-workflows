@@ -1,0 +1,200 @@
+name: Release OpenMRS Frontend Module
+
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: 'Node.js version to use'
+        type: string
+        default: '22'
+      build_command:
+        description: 'Command to build the project'
+        type: string
+        default: 'yarn turbo run build --color --concurrency=5'
+      enable_turborepo_cache:
+        description: 'Enable Turborepo remote cache via GitHub Artifacts'
+        type: boolean
+        default: false
+      pre_release_version_command:
+        description: >-
+          Command to set the pre-release version.
+          Available env vars: PRERELEASE_VERSION (e.g., 1.2.4-pre.42), GITHUB_RUN_NUMBER.
+          Default works for single-package repos.
+        type: string
+        default: 'yarn version "$PRERELEASE_VERSION"'
+      pre_release_publish_command:
+        description: 'Command to publish a pre-release from the main branch'
+        type: string
+        default: 'yarn npm publish --access public --tag next'
+      pre_release_patch_publish_command:
+        description: 'Command to publish a pre-release from a patch branch. If empty, patch branch publishing is skipped.'
+        type: string
+        default: ''
+      release_publish_command:
+        description: 'Command to publish a release'
+        type: string
+        default: 'yarn npm publish --access public'
+      support_patch_branches:
+        description: 'Whether to support patch/* branches for pre-releases'
+        type: boolean
+        default: false
+      trigger_refapp_build:
+        description: 'Whether to trigger the Reference Application frontend Docker image build after pre-release'
+        type: boolean
+        default: true
+      artifact_path:
+        description: 'Path(s) to build artifacts to upload (glob supported)'
+        type: string
+        default: 'dist'
+    secrets:
+      NPM_AUTH_TOKEN:
+        description: 'NPM authentication token for publishing'
+        required: true
+      BOT_PAT:
+        description: 'GitHub PAT with actions:write permission on openmrs-distro-referenceapplication for triggering the frontend Docker image build'
+        required: false
+
+env:
+  TURBO_API: 'http://127.0.0.1:9080'
+  TURBO_TOKEN: 'turbo-token'
+  TURBO_TEAM: ${{ github.repository_owner }}
+
+jobs:
+  pre_release:
+    name: Pre-release
+    runs-on: ubuntu-latest
+
+    if: >-
+      github.event_name == 'push'
+      && github.repository_owner == 'openmrs'
+      && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'yarn'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Setup Turborepo cache
+        if: inputs.enable_turborepo_cache
+        uses: felixmosh/turborepo-gh-artifacts@v4
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          server-token: ${{ env.TURBO_TOKEN }}
+
+      - name: Compute pre-release version
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -e "console.log(require('./package.json').version)")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%%-*}"
+          BASE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          if [ "${{ github.ref_name }}" = "main" ] || ! ${{ inputs.support_patch_branches }}; then
+            echo "version=${BASE_VERSION}-pre.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${BASE_VERSION}-patch.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set pre-release version
+        run: ${{ inputs.pre_release_version_command }}
+        env:
+          PRERELEASE_VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Run build
+        run: ${{ inputs.build_command }}
+
+      - name: Configure Git
+        run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
+
+      - name: Commit version changes
+        run: git add . && git commit -m "Prerelease version" --no-verify
+
+      - name: Publish pre-release (main)
+        if: github.ref_name == 'main'
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.pre_release_publish_command }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Publish pre-release (patch)
+        if: >-
+          inputs.support_patch_branches
+          && startsWith(github.ref_name, 'patch/')
+          && inputs.pre_release_patch_publish_command != ''
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.pre_release_patch_publish_command }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: ${{ inputs.artifact_path }}
+          overwrite: true
+
+  deploy:
+    name: Trigger deployment
+    runs-on: ubuntu-latest
+    needs: pre_release
+
+    if: >-
+      github.event_name == 'push'
+      && github.ref_name == 'main'
+      && inputs.trigger_refapp_build
+
+    steps:
+      - name: Trigger RefApp Frontend Docker Image Build
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.BOT_PAT }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'openmrs',
+              repo: 'openmrs-distro-referenceapplication',
+              workflow_id: 'build-frontend.yml',
+              ref: 'main',
+            });
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'yarn'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Setup Turborepo cache
+        if: inputs.enable_turborepo_cache
+        uses: felixmosh/turborepo-gh-artifacts@v4
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          server-token: ${{ env.TURBO_TOKEN }}
+
+      - name: Run build
+        run: ${{ inputs.build_command }}
+
+      - name: Publish release
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.release_publish_command }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}

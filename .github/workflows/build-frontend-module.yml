@@ -1,0 +1,77 @@
+name: Build OpenMRS Frontend Module
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: 'Node.js version to use'
+        type: string
+        default: '22'
+      build_command:
+        description: 'Command to build the project'
+        type: string
+        default: 'yarn turbo run build --color --concurrency=5'
+      verify_command:
+        description: 'Command to run lint, type checks, and tests'
+        type: string
+        default: 'yarn verify'
+      pre_verify_command:
+        description: 'Optional command to run before verify (e.g., yarn check-translations). Skipped if empty.'
+        type: string
+        default: ''
+      enable_turborepo_cache:
+        description: 'Enable Turborepo remote cache via GitHub Artifacts'
+        type: boolean
+        default: false
+      artifact_path:
+        description: 'Path(s) to build artifacts to upload (glob supported)'
+        type: string
+        default: 'dist'
+
+env:
+  TURBO_API: 'http://127.0.0.1:9080'
+  TURBO_TOKEN: 'turbo-token'
+  TURBO_TEAM: ${{ github.repository_owner }}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ inputs.node_version }}
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Setup Turborepo cache
+        if: inputs.enable_turborepo_cache
+        uses: felixmosh/turborepo-gh-artifacts@v4
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          server-token: ${{ env.TURBO_TOKEN }}
+
+      - name: Run pre-verify command
+        if: inputs.pre_verify_command != ''
+        run: ${{ inputs.pre_verify_command }}
+
+      - name: Run lint, type checks and tests
+        run: ${{ inputs.verify_command }}
+
+      - name: Run build
+        run: ${{ inputs.build_command }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: ${{ inputs.artifact_path }}
