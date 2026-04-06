@@ -186,7 +186,7 @@ jobs:
 
   owasp-dependency-check:
     if: ${{ inputs.run_owasp_check }}
-    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@fix/owasp/supression
     with:
       java_version: ${{ inputs.main_java_version }}
       java_distribution: ${{ inputs.java_distribution }}
