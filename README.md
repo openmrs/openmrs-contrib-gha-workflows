@@ -13,7 +13,7 @@ database updates.
 
 ### Suppressions
 
-Known false positives are managed in [`dependency-check-suppressions.xml`](./dependency-check-suppressions.xml).
+Known false positives are managed in [`dependency-check-suppressions.xml`](./.github/resources/owasp/dependency-check-suppressions.xml).
 
 #### Why individual CVE suppression?
 
@@ -34,13 +34,13 @@ If a new CVE appears in a scan report related to OpenMRS:
    distribution) and the vulnerable version range.
 2. **Determine if it is a false positive** — if the vulnerable code does not ship with this project's artifacts, it is a
    false positive.
-3. **Add a suppression** to `dependency-check-suppressions.xml` with the CVE ID and a note explaining why it does not
+3. **Add a suppression** to `.github/resources/owasp/dependency-check-suppressions.xml` with the CVE ID and a note explaining why it does not
    apply, following the existing format in that file.
 4. **Do not suppress without checking** — if there is any doubt, treat the finding as legitimate until proven otherwise.
 
 #### Modifying suppressions
 
-When updating `dependency-check-suppressions.xml`, keep the following in mind:
+When updating `.github/resources/owasp/dependency-check-suppressions.xml`, keep the following in mind:
 
 - Each `<suppress>` block must include a `<notes>` entry describing the CVE and the reason for suppression.
 - If you are scanning an artifact that **is** the affected component (e.g. the `dataexchange` or
