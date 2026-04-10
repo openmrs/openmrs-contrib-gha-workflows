@@ -66,9 +66,10 @@ jobs:
     runs-on: ubuntu-latest
 
     if: >-
-      github.event_name == 'push'
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.repository_owner == 'openmrs'
       && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
+      && (github.event.head_commit == null || !startsWith(github.event.head_commit.message, '(chore) Release'))
 
     steps:
       - name: Checkout repository
@@ -147,7 +148,7 @@ jobs:
     needs: pre_release
 
     if: >-
-      github.event_name == 'push'
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref_name == 'main'
       && inputs.trigger_refapp_build
 
