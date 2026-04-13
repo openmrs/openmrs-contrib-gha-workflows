@@ -18,9 +18,8 @@ on:
         type: string
         default: 'clean install'
       upload_coverage:
-        description: 'Whether to upload coverage reports to Codecov. Requires the JaCoCo Maven plugin to be configured in the project pom.xml to generate coverage reports during the build.'
-        type: boolean
-        default: true
+        description: 'Upload coverage reports to Codecov. If omitted, uploads when JaCoCo reports are found after the build. Set to "true" or "false" to override.'
+        type: string
       deploy_snapshots:
         description: 'Whether to deploy SNAPSHOT artifacts to the Maven repository'
         type: boolean
@@ -132,8 +131,25 @@ jobs:
       - name: Build with Maven
         run: mvn --batch-mode ${{ inputs.maven_args }} -Dmaven.deploy.skip
 
+      - name: Check for JaCoCo coverage reports
+        id: jacoco
+        if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)
+        env:
+          UPLOAD_COVERAGE: ${{ inputs.upload_coverage }}
+        run: |
+          VALUE=$(echo "$UPLOAD_COVERAGE" | tr '[:upper:]' '[:lower:]')
+          if [ "$VALUE" = "true" ]; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          elif [ "$VALUE" = "false" ]; then
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          elif find . -name 'jacoco.xml' -print -quit 2>/dev/null | grep -q .; then
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload coverage to Codecov
-        if: ${{ inputs.upload_coverage && matrix.java == fromJSON(needs.prepare.outputs.main_java_version) }}
+        if: steps.jacoco.outputs.upload == 'true'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         continue-on-error: true
         with:
