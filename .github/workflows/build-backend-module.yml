@@ -28,9 +28,8 @@ on:
         description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment. If omitted, deploys from main, master, and version branches (e.g. 3.x, 2.8.x).'
         type: string
       maven_server_id:
-        description: 'Maven server ID to use for SNAPSHOT deployment (must match the <snapshotRepository><id> in the project pom.xml)'
+        description: 'Maven server ID to use for SNAPSHOT deployment. If omitted, inferred from <distributionManagement><snapshotRepository><id> in pom.xml.'
         type: string
-        default: 'openmrs-repo-snapshots'
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -46,6 +45,7 @@ jobs:
     outputs:
       java_versions: ${{ steps.java.outputs.versions }}
       main_java_version: ${{ steps.java.outputs.main_version }}
+      snapshot_server_id: ${{ steps.server.outputs.snapshot_id }}
       deploy_branches: ${{ steps.deploy.outputs.branches }}
     steps:
       - name: Checkout repository
@@ -53,12 +53,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Checkout inference script
-        if: ${{ !inputs.java_versions || !inputs.main_java_version }}
+      - name: Checkout inference scripts
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
-          sparse-checkout: .github/scripts/infer-java-versions.py
+          sparse-checkout: .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
@@ -66,6 +65,20 @@ jobs:
         id: infer
         if: ${{ !inputs.java_versions || !inputs.main_java_version }}
         run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
+
+      - name: Infer Maven server IDs from pom.xml
+        id: infer-server
+        if: ${{ !inputs.maven_server_id }}
+        run: python3 .gha-workflows/.github/scripts/infer-maven-server-ids.py
+
+      - name: Resolve Maven server ID
+        id: server
+        env:
+          INPUT_SERVER_ID: ${{ inputs.maven_server_id }}
+          INFERRED_SERVER_ID: ${{ steps.infer-server.outputs.snapshot_server_id }}
+          DEFAULT_SERVER_ID: 'openmrs-repo-snapshots'
+        run: |
+          echo "snapshot_id=${INPUT_SERVER_ID:-${INFERRED_SERVER_ID:-$DEFAULT_SERVER_ID}}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve Java versions
         id: java
@@ -230,7 +243,7 @@ jobs:
           java-version: ${{ needs.prepare.outputs.main_java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
-          server-id: ${{ inputs.maven_server_id }}
+          server-id: ${{ needs.prepare.outputs.snapshot_server_id }}
           server-username: MAVEN_REPO_USERNAME
           server-password: MAVEN_REPO_API_KEY
 
