@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       java_versions:
-        description: 'Java versions to build against (e.g. [8, 11, 17])'
+        description: 'Java versions to build against (e.g. [8, 11, 17]). If omitted, inferred from the OpenMRS platform dependency in pom.xml.'
         type: string
       main_java_version:
-        description: 'Java version to use for publishing artifacts (must be included in java_versions)'
+        description: 'Java version for publishing artifacts (must be in java_versions). If omitted, inferred from Maven compiler settings, or defaults to the minimum of java_versions.'
         type: string
       java_distribution:
         description: 'Java distribution'
@@ -69,18 +69,53 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       java_versions: ${{ steps.java.outputs.versions }}
+      main_java_version: ${{ steps.java.outputs.main_version }}
       deploy_branches: ${{ steps.deploy.outputs.branches }}
     steps:
-      - name: Normalize java_versions
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+
+      - name: Checkout inference script
+        if: ${{ !inputs.java_versions || !inputs.main_java_version }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          sparse-checkout: .github/scripts/infer-java-versions.py
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer Java versions from pom.xml
+        id: infer
+        if: ${{ !inputs.java_versions || !inputs.main_java_version }}
+        run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
+
+      - name: Resolve Java versions
         id: java
         env:
           INPUT_JAVA_VERSIONS: ${{ inputs.java_versions }}
+          INPUT_MAIN_JAVA_VERSION: ${{ inputs.main_java_version }}
+          INFERRED_JAVA_VERSIONS: ${{ steps.infer.outputs.java_versions }}
+          INFERRED_MAIN_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
         run: |
-          if echo "$INPUT_JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
-            echo "versions=$INPUT_JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
-          else
-            echo "versions=[$INPUT_JAVA_VERSIONS]" >> "$GITHUB_OUTPUT"
+          JAVA_VERSIONS="${INPUT_JAVA_VERSIONS:-$INFERRED_JAVA_VERSIONS}"
+          if [ -z "$JAVA_VERSIONS" ]; then
+            echo "::error::java_versions could not be determined. Provide it explicitly or ensure pom.xml has an OpenMRS platform dependency."
+            exit 1
           fi
+          if echo "$JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            echo "versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
+          else
+            echo "versions=[$JAVA_VERSIONS]" >> "$GITHUB_OUTPUT"
+          fi
+
+          MAIN_VERSION="${INPUT_MAIN_JAVA_VERSION:-$INFERRED_MAIN_JAVA_VERSION}"
+          if [ -z "$MAIN_VERSION" ]; then
+            echo "::error::main_java_version could not be determined. Provide it explicitly or ensure pom.xml has compiler settings or an OpenMRS platform dependency."
+            exit 1
+          fi
+          echo "main_version=$MAIN_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Normalize deploy_branch
         id: deploy
@@ -120,7 +155,7 @@ jobs:
         run: mvn --batch-mode ${{ inputs.maven_args }} -Dmaven.deploy.skip
 
       - name: Upload coverage to Codecov
-        if: ${{ inputs.upload_coverage && matrix.java == fromJSON(inputs.main_java_version) }}
+        if: ${{ inputs.upload_coverage && matrix.java == fromJSON(needs.prepare.outputs.main_java_version) }}
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
         continue-on-error: true
         with:
@@ -131,7 +166,7 @@ jobs:
         run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
 
       - name: Generate checksums for OMOD
-        if: matrix.java == fromJSON(inputs.main_java_version)
+        if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)
         run: |
 
           set -euo pipefail
@@ -142,7 +177,7 @@ jobs:
           sha256sum "$FILE" | awk '{print $1}' > "$FILE.sha256"
 
       - name: Upload OMOD + checksums
-        if: matrix.java == fromJSON(inputs.main_java_version)
+        if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.get_omod_name.outputs.final_name }}
@@ -168,10 +203,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Set up Java ${{ inputs.main_java_version }}
+      - name: Set up Java ${{ needs.prepare.outputs.main_java_version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
-          java-version: ${{ inputs.main_java_version }}
+          java-version: ${{ needs.prepare.outputs.main_java_version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
           server-id: ${{ inputs.maven_server_id }}
@@ -185,10 +220,11 @@ jobs:
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
 
   owasp-dependency-check:
+    needs: prepare
     if: ${{ inputs.run_owasp_check && github.event_name != 'pull_request' }}
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
     with:
-      java_version: ${{ inputs.main_java_version }}
+      java_version: ${{ needs.prepare.outputs.main_java_version }}
       java_distribution: ${{ inputs.java_distribution }}
       fail_on_cvss: ${{ inputs.fail_on_cvss }}
       suppression_file: ${{ inputs.suppression_file }}
