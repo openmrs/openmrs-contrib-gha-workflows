@@ -55,11 +55,6 @@ on:
         description: 'GitHub PAT with actions:write permission on openmrs-distro-referenceapplication for triggering the frontend Docker image build'
         required: false
 
-env:
-  TURBO_API: 'http://127.0.0.1:9080'
-  TURBO_TOKEN: 'turbo-token'
-  TURBO_TEAM: ${{ github.repository_owner }}
-
 jobs:
   pre_release:
     name: Pre-release
@@ -72,61 +67,71 @@ jobs:
       && (github.event.head_commit == null || !startsWith(github.event.head_commit.message, '(chore) Release'))
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
+      - name: 🗂️ Cache node_modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+
+      - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      - name: Setup Turborepo cache
+      - name: 🚀 Setup Turborepo cache
         if: inputs.enable_turborepo_cache
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          server-token: ${{ env.TURBO_TOKEN }}
+          server-token: 'turbo-token'
 
-      - name: Compute pre-release version
+      - name: 🔧 Configure Turborepo environment
+        if: inputs.enable_turborepo_cache
+        run: |
+          echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
+          echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
+          echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
+
+      - name: 🏷️ Compute pre-release version
         id: version
         run: |
-          CURRENT_VERSION=$(node -e "console.log(require('./package.json').version)")
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION%%-*}"
-          BASE_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          BASE_VERSION=$(node -e "console.log(require('semver').inc(require('./package.json').version, 'patch'))")
           if [ "${{ github.ref_name }}" = "main" ] || ! ${{ inputs.support_patch_branches }}; then
             echo "version=${BASE_VERSION}-pre.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           else
             echo "version=${BASE_VERSION}-patch.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set pre-release version
+      - name: 🏷️ Set pre-release version
         run: ${{ inputs.pre_release_version_command }}
         env:
           PRERELEASE_VERSION: ${{ steps.version.outputs.version }}
 
-      - name: Run build
+      - name: 🏗️ Run build
         run: ${{ inputs.build_command }}
 
-      - name: Configure Git
+      - name: 🔧 Configure Git
         run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
 
-      - name: Commit version changes
+      - name: 💾 Commit version changes
         run: git add . && git commit -m "Prerelease version" --no-verify
 
-      - name: Publish pre-release (main)
+      - name: 📤 Publish pre-release (main)
         if: github.ref_name == 'main'
         run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.pre_release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
-      - name: Publish pre-release (patch)
+      - name: 📤 Publish pre-release (patch)
         if: >-
           inputs.support_patch_branches
           && startsWith(github.ref_name, 'patch/')
@@ -135,10 +140,10 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
-      - name: Upload build artifacts
+      - name: 📤 Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dist
+          name: ${{ github.event.repository.name }}-packages
           path: ${{ inputs.artifact_path }}
           overwrite: true
 
@@ -149,53 +154,61 @@ jobs:
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.repository_owner == 'openmrs'
       && github.ref_name == 'main'
       && inputs.trigger_refapp_build
 
     steps:
-      - name: Trigger RefApp Frontend Docker Image Build
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          github-token: ${{ secrets.BOT_PAT }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: 'openmrs',
-              repo: 'openmrs-distro-referenceapplication',
-              workflow_id: 'build-frontend.yml',
-              ref: 'main',
-            });
+      - name: 🚀 Trigger RefApp Frontend Docker Image Build
+        run: gh workflow run build-frontend.yml --repo openmrs/openmrs-distro-referenceapplication
+        env:
+          GH_TOKEN: ${{ secrets.BOT_PAT }}
 
   release:
     name: Release
     runs-on: ubuntu-latest
 
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && github.repository_owner == 'openmrs'
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
+      - name: 🗂️ Cache node_modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+
+      - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      - name: Setup Turborepo cache
+      - name: 🚀 Setup Turborepo cache
         if: inputs.enable_turborepo_cache
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          server-token: ${{ env.TURBO_TOKEN }}
+          server-token: 'turbo-token'
 
-      - name: Run build
+      - name: 🔧 Configure Turborepo environment
+        if: inputs.enable_turborepo_cache
+        run: |
+          echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
+          echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
+          echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
+
+      - name: 🏗️ Run build
         run: ${{ inputs.build_command }}
 
-      - name: Publish release
+      - name: 📢 Publish release
         run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}

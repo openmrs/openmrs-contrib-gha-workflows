@@ -28,11 +28,6 @@ on:
         type: string
         default: 'dist'
 
-env:
-  TURBO_API: 'http://127.0.0.1:9080'
-  TURBO_TOKEN: 'turbo-token'
-  TURBO_TEAM: ${{ github.repository_owner }}
-
 jobs:
   build:
     name: Build
@@ -41,37 +36,51 @@ jobs:
       actions: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Setup Node.js
+      - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: ${{ inputs.node_version }}
           cache: 'yarn'
 
-      - name: Install dependencies
+      - name: 🗂️ Cache node_modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+
+      - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      - name: Setup Turborepo cache
+      - name: 🚀 Setup Turborepo cache
         if: inputs.enable_turborepo_cache
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          server-token: ${{ env.TURBO_TOKEN }}
+          server-token: 'turbo-token'
 
-      - name: Run pre-verify command
+      - name: 🔧 Configure Turborepo environment
+        if: inputs.enable_turborepo_cache
+        run: |
+          echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
+          echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
+          echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
+
+      - name: 🏗️ Run build
+        run: ${{ inputs.build_command }}
+
+      - name: 🔍 Run pre-verify command
         if: inputs.pre_verify_command != ''
         run: ${{ inputs.pre_verify_command }}
 
-      - name: Run lint, type checks and tests
+      - name: 🔍 Run lint, type checks and tests
         run: ${{ inputs.verify_command }}
 
-      - name: Run build
-        run: ${{ inputs.build_command }}
-
-      - name: Upload build artifacts
+      - name: 📤 Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: dist
+          name: ${{ github.event.repository.name }}-packages
           path: ${{ inputs.artifact_path }}
