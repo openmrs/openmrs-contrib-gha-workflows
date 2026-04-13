@@ -25,9 +25,8 @@ on:
         type: boolean
         default: true
       deploy_branch:
-        description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment (e.g. "main" or ''["main", "master"]'')'
+        description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment. If omitted, deploys from main, master, and version branches (e.g. 3.x, 2.8.x).'
         type: string
-        default: '["main", "master"]'
       maven_server_id:
         description: 'Maven server ID to use for SNAPSHOT deployment (must match the <snapshotRepository><id> in the project pom.xml)'
         type: string
@@ -94,15 +93,43 @@ jobs:
           fi
           echo "main_version=$MAIN_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Normalize deploy_branch
+      - name: Resolve deploy branches
         id: deploy
         env:
           INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if echo "$INPUT_DEPLOY_BRANCH" | jq -e 'type == "array"' > /dev/null 2>&1; then
-            echo "branches=$INPUT_DEPLOY_BRANCH" >> "$GITHUB_OUTPUT"
+          if [ -n "$INPUT_DEPLOY_BRANCH" ]; then
+            # User supplied explicit branches — use as-is
+            if echo "$INPUT_DEPLOY_BRANCH" | jq -e 'type == "array"' > /dev/null 2>&1; then
+              echo "branches=$INPUT_DEPLOY_BRANCH" >> "$GITHUB_OUTPUT"
+            else
+              echo "branches=$(jq -nc --arg v "$INPUT_DEPLOY_BRANCH" '[$v]')" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "branches=$(jq -nc --arg v "$INPUT_DEPLOY_BRANCH" '[$v]')" >> "$GITHUB_OUTPUT"
+            # Auto-detect: main, master, and version branches (e.g. 3.x, 2.8.x)
+            # Version branches are only added if the POM version matches the branch prefix
+            BRANCHES='["main", "master"]'
+            if echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
+              PREFIX=$(echo "$REF_NAME" | sed 's/\.x$/\./')
+              POM_VERSION=$(python3 -c "
+          import xml.etree.ElementTree as ET
+          root = ET.parse('pom.xml').getroot()
+          for tag in ('version', '{http://maven.apache.org/POM/4.0.0}version'):
+              v = root.find(tag)
+              if v is not None and v.text:
+                  print(v.text.strip()); break
+          else:
+              for tag in ('parent/version', '{http://maven.apache.org/POM/4.0.0}parent/{http://maven.apache.org/POM/4.0.0}version'):
+                  v = root.find(tag)
+                  if v is not None and v.text:
+                      print(v.text.strip()); break
+          " 2>/dev/null || true)
+              if echo "$POM_VERSION" | grep -q "^$PREFIX"; then
+                BRANCHES=$(echo "$BRANCHES" | jq -c --arg b "$REF_NAME" '. + [$b]')
+              fi
+            fi
+            echo "branches=$BRANCHES" >> "$GITHUB_OUTPUT"
           fi
 
   build:
