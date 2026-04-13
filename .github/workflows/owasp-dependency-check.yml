@@ -72,12 +72,14 @@ jobs:
           echo "Could not detect project type. Expected pom.xml or package.json at repo root."
           exit 1
 
-      - name: Checkout inference script
-        if: steps.detect.outputs.type == 'java' && !inputs.java_version
+      - name: Checkout inference scripts and resources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
-          sparse-checkout: .github/scripts/infer-java-versions.py
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: |
+            .github/scripts
+            .github/resources/owasp
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
@@ -97,26 +99,20 @@ jobs:
           VERSION="${INPUT_JAVA_VERSION:-${INFERRED_JAVA_VERSION:-$DEFAULT_JAVA_VERSION}}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Infer Node.js version from package.json
+        id: infer-node
+        if: steps.detect.outputs.type == 'node' && !inputs.node_version
+        run: python3 .gha-workflows/.github/scripts/infer-node-version.py
+
       - name: Resolve Node.js version
         id: node
         if: steps.detect.outputs.type == 'node'
         env:
           INPUT_NODE_VERSION: ${{ inputs.node_version }}
+          INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
           DEFAULT_NODE_VERSION: '22'
         run: |
-          if [ -n "$INPUT_NODE_VERSION" ]; then
-            echo "version=$INPUT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-          elif [ -f package.json ]; then
-            ENGINES_NODE=$(jq -r '.engines.node // empty' package.json)
-            if [ -n "$ENGINES_NODE" ]; then
-              VERSION=$(echo "$ENGINES_NODE" | grep -oE '[0-9]+' | head -1)
-              echo "version=${VERSION:-$DEFAULT_NODE_VERSION}" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=$DEFAULT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "version=$DEFAULT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-$DEFAULT_NODE_VERSION}}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java ${{ steps.java.outputs.version }}
         if: steps.detect.outputs.type == 'java'
@@ -142,15 +138,6 @@ jobs:
             echo "Suppression file not found. Will fetch default."
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Checkout default suppression file
-        if: steps.suppression.outputs.exists == 'false'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          path: .gha-workflows
-          sparse-checkout: .github/resources/owasp/dependency-check-suppressions.xml
-          sparse-checkout-cone-mode: false
 
       - name: Copy default suppression file
         if: steps.suppression.outputs.exists == 'false'

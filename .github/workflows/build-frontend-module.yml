@@ -37,25 +37,29 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Checkout inference scripts
+        if: ${{ !inputs.node_version }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer Node.js version from package.json
+        id: infer-node
+        if: ${{ !inputs.node_version }}
+        run: python3 .gha-workflows/.github/scripts/infer-node-version.py
+
       - name: Resolve Node.js version
         id: node
         env:
           INPUT_NODE_VERSION: ${{ inputs.node_version }}
+          INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
           DEFAULT_NODE_VERSION: '22'
         run: |
-          if [ -n "$INPUT_NODE_VERSION" ]; then
-            echo "version=$INPUT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-          elif [ -f package.json ]; then
-            ENGINES_NODE=$(jq -r '.engines.node // empty' package.json)
-            if [ -n "$ENGINES_NODE" ]; then
-              VERSION=$(echo "$ENGINES_NODE" | grep -oE '[0-9]+' | head -1)
-              echo "version=${VERSION:-$DEFAULT_NODE_VERSION}" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=$DEFAULT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            echo "version=$DEFAULT_NODE_VERSION" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-$DEFAULT_NODE_VERSION}}" >> "$GITHUB_OUTPUT"
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0

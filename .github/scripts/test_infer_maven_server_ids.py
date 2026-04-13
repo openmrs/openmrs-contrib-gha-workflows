@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(__file__))
 import importlib
+from pom_utils import strip_ns
 
 infer = importlib.import_module("infer-maven-server-ids")
 
@@ -16,7 +17,7 @@ infer = importlib.import_module("infer-maven-server-ids")
 class TestFindServerIds(unittest.TestCase):
     def _parse(self, xml_str):
         root = ET.fromstring(textwrap.dedent(xml_str))
-        infer.strip_ns(root)
+        strip_ns(root)
         return root
 
     def test_both_ids(self):

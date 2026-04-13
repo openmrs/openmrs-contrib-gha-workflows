@@ -10,6 +10,7 @@ import unittest
 # Import the module under test from the same directory
 sys.path.insert(0, os.path.dirname(__file__))
 import importlib
+from pom_utils import strip_ns
 
 infer = importlib.import_module("infer-java-versions")
 
@@ -144,7 +145,7 @@ class TestFindCompilerVersion(unittest.TestCase):
         import xml.etree.ElementTree as ET
 
         root = ET.fromstring(textwrap.dedent(xml_str))
-        infer.strip_ns(root)
+        strip_ns(root)
         props = infer.get_properties(root)
         return root, props
 
@@ -256,7 +257,7 @@ class TestFindOpenmrsVersion(unittest.TestCase):
                     f.write(textwrap.dedent(xml_content))
 
         root = ET.parse(root_path).getroot()
-        infer.strip_ns(root)
+        strip_ns(root)
         props = infer.get_properties(root)
 
         old_cwd = os.getcwd()
@@ -383,7 +384,7 @@ class TestEndToEnd(unittest.TestCase):
                     f.write(textwrap.dedent(xml_content))
 
         root = ET.parse(root_path).getroot()
-        infer.strip_ns(root)
+        strip_ns(root)
         props = infer.get_properties(root)
         compiler_version = infer.find_compiler_version(root, props)
 

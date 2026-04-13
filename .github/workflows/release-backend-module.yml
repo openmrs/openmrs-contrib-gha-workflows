@@ -103,7 +103,7 @@ jobs:
             echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           elif echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
             PREFIX=$(echo "$REF_NAME" | sed 's/\.x$/\./')
-            if echo "$RELEASE_VERSION" | grep -q "^$PREFIX"; then
+            if echo "$RELEASE_VERSION" | grep -qF "$PREFIX"; then
               echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
             else
               echo "::error::Branch '$REF_NAME' does not match release version '$RELEASE_VERSION' (expected prefix '$PREFIX'). Provide the branch explicitly."
@@ -153,6 +153,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
           sparse-checkout: .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
@@ -199,22 +200,31 @@ jobs:
           overwrite-settings: false
 
       - name: Set up Maven settings
+        env:
+          RELEASE_ID: ${{ steps.server.outputs.release_id }}
+          SNAPSHOT_ID: ${{ steps.server.outputs.snapshot_id }}
         run: |
+          for id in "$RELEASE_ID" "$SNAPSHOT_ID"; do
+            if [[ ! "$id" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+              echo "::error::Maven server ID '$id' contains invalid characters"
+              exit 1
+            fi
+          done
           mkdir -p "$HOME/.m2"
-          cat > "$HOME/.m2/settings.xml" << 'EOF'
+          cat > "$HOME/.m2/settings.xml" << EOF
           <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
             xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
             <servers>
               <server>
-                <id>${{ steps.server.outputs.release_id }}</id>
-                <username>${env.MAVEN_REPO_USERNAME}</username>
-                <password>${env.MAVEN_REPO_API_KEY}</password>
+                <id>$RELEASE_ID</id>
+                <username>\${env.MAVEN_REPO_USERNAME}</username>
+                <password>\${env.MAVEN_REPO_API_KEY}</password>
               </server>
               <server>
-                <id>${{ steps.server.outputs.snapshot_id }}</id>
-                <username>${env.MAVEN_REPO_USERNAME}</username>
-                <password>${env.MAVEN_REPO_API_KEY}</password>
+                <id>$SNAPSHOT_ID</id>
+                <username>\${env.MAVEN_REPO_USERNAME}</username>
+                <password>\${env.MAVEN_REPO_API_KEY}</password>
               </server>
             </servers>
           </settings>

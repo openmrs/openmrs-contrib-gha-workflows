@@ -10,7 +10,9 @@ import json
 import os
 import re
 import sys
-import xml.etree.ElementTree as ET
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pom_utils import parse_pom, write_github_outputs
 
 PLATFORM_JAVA_MAP = [
     ((2, 0, 0), (2, 4, 0), [8]),
@@ -24,13 +26,6 @@ OPENMRS_DEPS = {
     ("org.openmrs.api", "openmrs-api"),
     ("org.openmrs.web", "openmrs-web"),
 }
-
-
-def strip_ns(root):
-    """Remove XML namespace prefixes from all elements."""
-    for el in root.iter():
-        if "}" in el.tag:
-            el.tag = el.tag.split("}", 1)[1]
 
 
 def parse_version(s):
@@ -142,12 +137,8 @@ def find_openmrs_version(root, props):
         if not mod.text:
             continue
         mod_pom = os.path.join(mod.text.strip(), "pom.xml")
-        if not os.path.isfile(mod_pom):
-            continue
-        try:
-            mod_root = ET.parse(mod_pom).getroot()
-            strip_ns(mod_root)
-        except ET.ParseError:
+        mod_root = parse_pom(mod_pom)
+        if mod_root is None:
             continue
         mod_props = {**props, **get_properties(mod_root)}
         for p in ("dependencyManagement/dependencies", "dependencies"):
@@ -187,19 +178,10 @@ def map_range_to_java(range_str):
 
 
 def main():
-    if not os.path.isfile("pom.xml"):
-        print(
-            "::warning::No pom.xml found; skipping Java version inference",
-            file=sys.stderr,
-        )
-        return
-    try:
-        root = ET.parse("pom.xml").getroot()
-    except ET.ParseError as e:
-        print(f"::warning::Failed to parse pom.xml: {e}", file=sys.stderr)
+    root = parse_pom()
+    if root is None:
         return
 
-    strip_ns(root)
     props = get_properties(root)
     compiler_version = find_compiler_version(root, props)
     openmrs_ver = find_openmrs_version(root, props)
@@ -222,17 +204,14 @@ def main():
     else:
         main_java = None
 
-    out_file = os.environ.get("GITHUB_OUTPUT", "")
-    lines = []
-    if java_versions is not None:
-        lines.append(f"java_versions={json.dumps(java_versions)}")
-    if main_java is not None:
-        lines.append(f"main_java_version={main_java}")
-    if out_file and lines:
-        with open(out_file, "a") as f:
-            f.write("\n".join(lines) + "\n")
-    elif lines:
-        print("\n".join(lines))
+    write_github_outputs(
+        {
+            "java_versions": json.dumps(java_versions)
+            if java_versions is not None
+            else None,
+            "main_java_version": main_java,
+        }
+    )
 
 
 if __name__ == "__main__":

@@ -7,14 +7,9 @@ Extracts the <repository><id> and <snapshotRepository><id> from the
 
 import os
 import sys
-import xml.etree.ElementTree as ET
 
-
-def strip_ns(root):
-    """Remove XML namespace prefixes from all elements."""
-    for el in root.iter():
-        if "}" in el.tag:
-            el.tag = el.tag.split("}", 1)[1]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pom_utils import parse_pom, write_github_outputs
 
 
 def find_server_ids(root):
@@ -33,32 +28,17 @@ def find_server_ids(root):
 
 
 def main():
-    if not os.path.isfile("pom.xml"):
-        print(
-            "::warning::No pom.xml found; skipping Maven server ID inference",
-            file=sys.stderr,
-        )
-        return
-    try:
-        root = ET.parse("pom.xml").getroot()
-    except ET.ParseError as e:
-        print(f"::warning::Failed to parse pom.xml: {e}", file=sys.stderr)
+    root = parse_pom()
+    if root is None:
         return
 
-    strip_ns(root)
     release_id, snapshot_id = find_server_ids(root)
-
-    out_file = os.environ.get("GITHUB_OUTPUT", "")
-    lines = []
-    if release_id is not None:
-        lines.append(f"release_server_id={release_id}")
-    if snapshot_id is not None:
-        lines.append(f"snapshot_server_id={snapshot_id}")
-    if out_file and lines:
-        with open(out_file, "a") as f:
-            f.write("\n".join(lines) + "\n")
-    elif lines:
-        print("\n".join(lines))
+    write_github_outputs(
+        {
+            "release_server_id": release_id,
+            "snapshot_server_id": snapshot_id,
+        }
+    )
 
 
 if __name__ == "__main__":
