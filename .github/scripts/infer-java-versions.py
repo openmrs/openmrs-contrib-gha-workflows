@@ -193,15 +193,22 @@ def main():
 
     strip_ns(root)
     props = get_properties(root)
-    main_java = find_compiler_version(root, props)
+    compiler_version = find_compiler_version(root, props)
     openmrs_ver = find_openmrs_version(root, props)
     java_versions = map_to_java(openmrs_ver) if openmrs_ver else None
 
-    if main_java is None and java_versions:
-        main_java = str(min(java_versions))
-    if main_java and java_versions and int(main_java) not in java_versions:
-        java_versions.append(int(main_java))
+    # Ensure the compiler target is in java_versions (it should be tested against)
+    if compiler_version and java_versions and int(compiler_version) not in java_versions:
+        java_versions.append(int(compiler_version))
         java_versions.sort()
+
+    # main_java_version is the minimum supported version
+    if java_versions:
+        main_java = str(min(java_versions))
+    elif compiler_version:
+        main_java = compiler_version
+    else:
+        main_java = None
 
     out_file = os.environ.get('GITHUB_OUTPUT', '')
     lines = []

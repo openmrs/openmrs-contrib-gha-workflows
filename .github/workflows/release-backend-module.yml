@@ -12,9 +12,8 @@ on:
         type: string
         required: true
       java_version:
-        description: 'Java version to use for the release'
+        description: 'Java version to use for the release. If omitted, inferred from Maven compiler settings in pom.xml.'
         type: string
-        default: '8'
       java_distribution:
         description: 'Java distribution'
         type: string
@@ -28,10 +27,9 @@ on:
         type: string
         default: 'infrastructure@openmrs.org'
       branch:
-        description: 'Branch to release from'
+        description: 'Branch to release from. If omitted, uses the branch that triggered the workflow.'
         type: string
         required: false
-        default: 'master'
       maven_release_server_id:
         description: 'Maven server ID to use for release deployment'
         type: string
@@ -63,7 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     concurrency:
-      group: release-${{ github.repository }}-${{ inputs.branch }}
+      group: release-${{ github.repository }}-${{ inputs.branch || github.ref_name }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -94,6 +92,30 @@ jobs:
           RELEASE_VERSION: ${{ inputs.release_version }}
           DEVELOPMENT_VERSION: ${{ inputs.development_version }}
 
+      - name: Resolve branch
+        id: branch
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [ -n "$INPUT_BRANCH" ]; then
+            echo "name=$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
+          elif [ "$REF_NAME" = "main" ] || [ "$REF_NAME" = "master" ]; then
+            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
+          elif echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
+            PREFIX=$(echo "$REF_NAME" | sed 's/\.x$/\./')
+            if echo "$RELEASE_VERSION" | grep -q "^$PREFIX"; then
+              echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::Branch '$REF_NAME' does not match release version '$RELEASE_VERSION' (expected prefix '$PREFIX'). Provide the branch explicitly."
+              exit 1
+            fi
+          else
+            echo "::error::Cannot auto-detect release branch from '$REF_NAME'. Provide the branch explicitly."
+            exit 1
+          fi
+
       - name: Validate branch
         run: |
           # Ensure branch name contains only valid git branch characters
@@ -111,14 +133,14 @@ jobs:
 
           echo "Branch validated: $BRANCH exists in $REPO"
         env:
-          BRANCH: ${{ inputs.branch }}
+          BRANCH: ${{ steps.branch.outputs.name }}
           REPO: ${{ github.repository }}
 
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ inputs.branch }}
+          ref: ${{ steps.branch.outputs.name }}
           token: ${{ secrets.BOT_PAT || github.token }}
 
       - name: Checkout release scripts
@@ -129,10 +151,34 @@ jobs:
           sparse-checkout: release-prepare-perform.sh
           sparse-checkout-cone-mode: false
 
-      - name: Set up Java ${{ inputs.java_version }}
+      - name: Checkout inference script
+        if: ${{ !inputs.java_version }}
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          sparse-checkout: .github/scripts/infer-java-versions.py
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer Java version from pom.xml
+        id: infer-java
+        if: ${{ !inputs.java_version }}
+        run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
+
+      - name: Resolve Java version
+        id: java
+        env:
+          INPUT_JAVA_VERSION: ${{ inputs.java_version }}
+          INFERRED_JAVA_VERSION: ${{ steps.infer-java.outputs.main_java_version }}
+          DEFAULT_JAVA_VERSION: '8'
+        run: |
+          VERSION="${INPUT_JAVA_VERSION:-${INFERRED_JAVA_VERSION:-$DEFAULT_JAVA_VERSION}}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java ${{ steps.java.outputs.version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
-          java-version: ${{ inputs.java_version }}
+          java-version: ${{ steps.java.outputs.version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
           overwrite-settings: false

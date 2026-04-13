@@ -380,7 +380,7 @@ class TestEndToEnd(unittest.TestCase):
         root = ET.parse(root_path).getroot()
         infer.strip_ns(root)
         props = infer.get_properties(root)
-        main_java = infer.find_compiler_version(root, props)
+        compiler_version = infer.find_compiler_version(root, props)
 
         old_cwd = os.getcwd()
         os.chdir(tmpdir)
@@ -391,11 +391,16 @@ class TestEndToEnd(unittest.TestCase):
 
         java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
 
-        if main_java is None and java_versions:
-            main_java = str(min(java_versions))
-        if main_java and java_versions and int(main_java) not in java_versions:
-            java_versions.append(int(main_java))
+        if compiler_version and java_versions and int(compiler_version) not in java_versions:
+            java_versions.append(int(compiler_version))
             java_versions.sort()
+
+        if java_versions:
+            main_java = str(min(java_versions))
+        elif compiler_version:
+            main_java = compiler_version
+        else:
+            main_java = None
 
         return main_java, java_versions
 
@@ -457,7 +462,8 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(main, '8')
         self.assertEqual(versions, [8, 11, 17, 21])
 
-    def test_release_takes_priority_over_target(self):
+    def test_main_is_min_not_compiler_target(self):
+        """main_java_version is min(java_versions), not the compiler target."""
         main, versions = self._run_inference('''\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
@@ -472,7 +478,7 @@ class TestEndToEnd(unittest.TestCase):
                 </dependency>
               </dependencies>
             </project>''')
-        self.assertEqual(main, '11')
+        self.assertEqual(main, '8')
         self.assertEqual(versions, [8, 11, 17])
 
     def test_main_java_added_to_versions_if_missing(self):
@@ -543,6 +549,24 @@ class TestEndToEnd(unittest.TestCase):
             })
         self.assertEqual(main, '8')
         self.assertEqual(versions, [8, 11, 17])
+
+    def test_no_openmrs_dep_falls_back_to_compiler(self):
+        """Without OpenMRS dep, compiler target is used as fallback."""
+        main, versions = self._run_inference('''\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <maven.compiler.target>17</maven.compiler.target>
+              </properties>
+              <dependencies>
+                <dependency>
+                  <groupId>junit</groupId>
+                  <artifactId>junit</artifactId>
+                  <version>4.13</version>
+                </dependency>
+              </dependencies>
+            </project>''')
+        self.assertEqual(main, '17')
+        self.assertIsNone(versions)
 
     def test_no_openmrs_dep_no_compiler(self):
         main, versions = self._run_inference('''\
