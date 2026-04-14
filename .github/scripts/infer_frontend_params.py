@@ -88,13 +88,15 @@ def infer_params(path="package.json", base_dir=None):
 
     # If turbo.json is absent, fall back to plain yarn build
     turbo_json = os.path.join(base_dir, "turbo.json")
-    if not os.path.isfile(turbo_json):
+    has_turbo = os.path.isfile(turbo_json)
+    if not has_turbo:
         outputs["build_command"] = "yarn build"
+    else:
+        outputs["enable_turborepo_cache"] = "true"
 
     if is_monorepo(pkg):
         outputs["is_monorepo"] = "true"
         outputs["verify_command"] = "yarn verify --concurrency=5"
-        outputs["enable_turborepo_cache"] = "true"
         outputs["artifact_path"] = workspace_artifact_paths(pkg)
 
         # Version command: set pre-release version across all workspaces
