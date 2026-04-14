@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Infer main_java_version and java_versions from a Maven POM file.
+"""Infer backend build parameters from a Maven POM file.
 
-Extracts the Java compiler target from Maven compiler settings and maps the
-OpenMRS platform dependency version to supported Java versions. Writes results
-as GitHub Actions step outputs.
+Parses pom.xml once and extracts:
+- Java versions to build against (from OpenMRS platform dependency mapping)
+- Main Java version (from Maven compiler settings)
+- Maven server IDs for release and snapshot deployment
+- POM project version
+
+Writes results as GitHub Actions step outputs.
 """
 
 import json
@@ -14,6 +18,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import parse_pom, write_github_outputs
 
+# Maps OpenMRS platform version ranges to the Java versions they support.
+# Each entry is (lower_inclusive, upper_exclusive_or_None, java_versions).
 PLATFORM_JAVA_MAP = [
     ((2, 0, 0), (2, 4, 0), [8]),
     ((2, 4, 0), (2, 7, 0), [8, 11]),
@@ -27,6 +33,10 @@ OPENMRS_DEPS = {
     ("org.openmrs.web", "openmrs-web"),
 }
 
+
+# ---------------------------------------------------------------------------
+# Version parsing
+# ---------------------------------------------------------------------------
 
 def parse_version(s):
     """Parse '2.6.1' or '2.6.1-SNAPSHOT' into a (major, minor, patch) tuple."""
@@ -45,6 +55,10 @@ def normalize_java(v):
     v = v.strip()
     return v[2:] if v.startswith("1.") else v
 
+
+# ---------------------------------------------------------------------------
+# POM property resolution
+# ---------------------------------------------------------------------------
 
 def resolve(val, props, depth=0):
     """Resolve ${property} references from the properties dict."""
@@ -74,6 +88,10 @@ def get_properties(root):
         props.setdefault("project.version", parent_ver.strip())
     return props
 
+
+# ---------------------------------------------------------------------------
+# Java version inference
+# ---------------------------------------------------------------------------
 
 def find_compiler_version(root, props):
     """Find main_java_version from compiler settings (priority order).
@@ -177,17 +195,59 @@ def map_range_to_java(range_str):
     return sorted(result) if result else None
 
 
+# ---------------------------------------------------------------------------
+# Maven server ID inference
+# ---------------------------------------------------------------------------
+
+def find_server_ids(root):
+    """Extract repository and snapshotRepository server IDs from distributionManagement."""
+    release_id = None
+    snapshot_id = None
+    dm = root.find("distributionManagement")
+    if dm is not None:
+        repo = dm.find("repository/id")
+        if repo is not None and repo.text:
+            release_id = repo.text.strip()
+        snap = dm.find("snapshotRepository/id")
+        if snap is not None and snap.text:
+            snapshot_id = snap.text.strip()
+    return release_id, snapshot_id
+
+
+# ---------------------------------------------------------------------------
+# POM project version
+# ---------------------------------------------------------------------------
+
+def find_project_version(root):
+    """Extract project version from POM root element.
+
+    Checks <version> first, then falls back to <parent><version>.
+    """
+    ver = root.findtext("version")
+    if ver:
+        return ver.strip()
+    parent_ver = root.findtext("parent/version")
+    if parent_ver:
+        return parent_ver.strip()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main():
     root = parse_pom()
     if root is None:
         return
 
     props = get_properties(root)
+
+    # Java versions
     compiler_version = find_compiler_version(root, props)
     openmrs_ver = find_openmrs_version(root, props)
     java_versions = map_to_java(openmrs_ver) if openmrs_ver else None
 
-    # Ensure the compiler target is in java_versions (it should be tested against)
     if (
         compiler_version
         and java_versions
@@ -196,7 +256,6 @@ def main():
         java_versions.append(int(compiler_version))
         java_versions.sort()
 
-    # main_java_version is the minimum supported version
     if java_versions:
         main_java = str(min(java_versions))
     elif compiler_version:
@@ -204,12 +263,21 @@ def main():
     else:
         main_java = None
 
+    # Server IDs
+    release_id, snapshot_id = find_server_ids(root)
+
+    # Project version
+    project_version = find_project_version(root)
+
     write_github_outputs(
         {
             "java_versions": json.dumps(java_versions)
             if java_versions is not None
             else None,
             "main_java_version": main_java,
+            "release_server_id": release_id,
+            "snapshot_server_id": snapshot_id,
+            "project_version": project_version,
         }
     )
 

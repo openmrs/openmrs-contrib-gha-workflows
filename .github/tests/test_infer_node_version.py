@@ -7,10 +7,8 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import importlib
-
-infer = importlib.import_module("infer-node-version")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import infer_node_version as infer
 
 
 class TestInferNodeVersion(unittest.TestCase):

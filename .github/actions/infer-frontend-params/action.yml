@@ -1,0 +1,123 @@
+name: Infer Frontend Parameters
+description: >
+  Infer Node.js version and frontend build/release parameters from package.json.
+  Accepts optional explicit overrides; falls back to inference, then hardcoded defaults.
+
+inputs:
+  node_version:
+    description: 'Override: Node.js version'
+    required: false
+    default: ''
+  build_command:
+    description: 'Override: Build command'
+    required: false
+    default: ''
+  verify_command:
+    description: 'Override: Verify command (lint, type checks, tests)'
+    required: false
+    default: ''
+  enable_turborepo_cache:
+    description: 'Override: Enable Turborepo cache ("true"/"false")'
+    required: false
+    default: ''
+  artifact_path:
+    description: 'Override: Build artifact path(s)'
+    required: false
+    default: ''
+  pre_release_version_command:
+    description: 'Override: Command to set pre-release version'
+    required: false
+    default: ''
+  pre_release_publish_command:
+    description: 'Override: Command to publish a pre-release'
+    required: false
+    default: ''
+  pre_release_patch_publish_command:
+    description: 'Override: Command to publish a patch pre-release'
+    required: false
+    default: ''
+  release_publish_command:
+    description: 'Override: Command to publish a release'
+    required: false
+    default: ''
+
+outputs:
+  node_version:
+    description: 'Resolved Node.js major version'
+    value: ${{ steps.resolve.outputs.node_version }}
+  build_command:
+    description: 'Resolved build command'
+    value: ${{ steps.resolve.outputs.build_command }}
+  verify_command:
+    description: 'Resolved verify command'
+    value: ${{ steps.resolve.outputs.verify_command }}
+  enable_turborepo_cache:
+    description: 'Resolved Turborepo cache flag ("true"/"false")'
+    value: ${{ steps.resolve.outputs.enable_turborepo_cache }}
+  artifact_path:
+    description: 'Resolved artifact path(s)'
+    value: ${{ steps.resolve.outputs.artifact_path }}
+  pre_release_version_command:
+    description: 'Resolved pre-release version command'
+    value: ${{ steps.resolve.outputs.pre_release_version_command }}
+  pre_release_publish_command:
+    description: 'Resolved pre-release publish command'
+    value: ${{ steps.resolve.outputs.pre_release_publish_command }}
+  pre_release_patch_publish_command:
+    description: 'Resolved patch pre-release publish command (empty if unsupported)'
+    value: ${{ steps.resolve.outputs.pre_release_patch_publish_command }}
+  release_publish_command:
+    description: 'Resolved release publish command'
+    value: ${{ steps.resolve.outputs.release_publish_command }}
+
+runs:
+  using: composite
+  steps:
+    - name: Infer Node.js version from package.json
+      id: infer-node
+      shell: bash
+      run: python3 "${{ github.action_path }}/../../scripts/infer_node_version.py"
+
+    - name: Infer frontend parameters from package.json
+      id: infer-frontend
+      shell: bash
+      run: python3 "${{ github.action_path }}/../../scripts/infer_frontend_params.py"
+
+    - name: Resolve parameters (explicit > inferred > default)
+      id: resolve
+      shell: bash
+      env:
+        INPUT_NODE_VERSION: ${{ inputs.node_version }}
+        INPUT_BUILD_COMMAND: ${{ inputs.build_command }}
+        INPUT_VERIFY_COMMAND: ${{ inputs.verify_command }}
+        INPUT_ENABLE_TURBOREPO_CACHE: ${{ inputs.enable_turborepo_cache }}
+        INPUT_ARTIFACT_PATH: ${{ inputs.artifact_path }}
+        INPUT_PRE_RELEASE_VERSION_COMMAND: ${{ inputs.pre_release_version_command }}
+        INPUT_PRE_RELEASE_PUBLISH_COMMAND: ${{ inputs.pre_release_publish_command }}
+        INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ inputs.pre_release_patch_publish_command }}
+        INPUT_RELEASE_PUBLISH_COMMAND: ${{ inputs.release_publish_command }}
+        INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
+        INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
+        INFERRED_VERIFY_COMMAND: ${{ steps.infer-frontend.outputs.verify_command }}
+        INFERRED_ENABLE_TURBOREPO_CACHE: ${{ steps.infer-frontend.outputs.enable_turborepo_cache }}
+        INFERRED_ARTIFACT_PATH: ${{ steps.infer-frontend.outputs.artifact_path }}
+        INFERRED_PRE_RELEASE_VERSION_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_version_command }}
+        INFERRED_PRE_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_publish_command }}
+        INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_patch_publish_command }}
+        INFERRED_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.release_publish_command }}
+      run: |
+        echo "node_version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-22}}" >> "$GITHUB_OUTPUT"
+        echo "build_command=${INPUT_BUILD_COMMAND:-${INFERRED_BUILD_COMMAND:-yarn turbo run build --color --concurrency=5}}" >> "$GITHUB_OUTPUT"
+        echo "verify_command=${INPUT_VERIFY_COMMAND:-${INFERRED_VERIFY_COMMAND:-yarn verify}}" >> "$GITHUB_OUTPUT"
+        echo "enable_turborepo_cache=${INPUT_ENABLE_TURBOREPO_CACHE:-${INFERRED_ENABLE_TURBOREPO_CACHE:-false}}" >> "$GITHUB_OUTPUT"
+
+        echo "pre_release_version_command=${INPUT_PRE_RELEASE_VERSION_COMMAND:-${INFERRED_PRE_RELEASE_VERSION_COMMAND:-yarn version \"\$PRERELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
+        echo "pre_release_publish_command=${INPUT_PRE_RELEASE_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public --tag next}}" >> "$GITHUB_OUTPUT"
+        echo "pre_release_patch_publish_command=${INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND}}" >> "$GITHUB_OUTPUT"
+        echo "release_publish_command=${INPUT_RELEASE_PUBLISH_COMMAND:-${INFERRED_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public}}" >> "$GITHUB_OUTPUT"
+
+        # artifact_path may be multiline (monorepo with multiple workspace globs)
+        RESOLVED_ARTIFACT_PATH="${INPUT_ARTIFACT_PATH:-${INFERRED_ARTIFACT_PATH:-dist}}"
+        echo "artifact_path<<EOF" >> "$GITHUB_OUTPUT"
+        echo "$RESOLVED_ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"

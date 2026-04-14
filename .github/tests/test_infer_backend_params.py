@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Tests for infer-java-versions.py."""
+"""Tests for infer_backend_params.py."""
 
 import os
 import sys
 import tempfile
 import textwrap
 import unittest
+import xml.etree.ElementTree as ET
 
-# Import the module under test from the same directory
-sys.path.insert(0, os.path.dirname(__file__))
-import importlib
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import infer_backend_params as infer
 from utils import strip_ns
 
-infer = importlib.import_module("infer-java-versions")
 
+# ---------------------------------------------------------------------------
+# Version parsing
+# ---------------------------------------------------------------------------
 
 class TestParseVersion(unittest.TestCase):
     def test_three_part(self):
@@ -52,6 +54,10 @@ class TestNormalizeJava(unittest.TestCase):
         self.assertEqual(infer.normalize_java("  1.8  "), "8")
 
 
+# ---------------------------------------------------------------------------
+# Property resolution
+# ---------------------------------------------------------------------------
+
 class TestResolve(unittest.TestCase):
     def test_simple_property(self):
         self.assertEqual(infer.resolve("${foo}", {"foo": "2.6.1"}), "2.6.1")
@@ -70,11 +76,14 @@ class TestResolve(unittest.TestCase):
         self.assertIsNone(infer.resolve(None, {}))
 
     def test_max_depth(self):
-        # Self-referencing property shouldn't infinite loop
         props = {"a": "${a}"}
         result = infer.resolve("${a}", props)
         self.assertEqual(result, "${a}")
 
+
+# ---------------------------------------------------------------------------
+# OpenMRS version → Java mapping
+# ---------------------------------------------------------------------------
 
 class TestMapToJava(unittest.TestCase):
     def test_2_0_0(self):
@@ -129,21 +138,12 @@ class TestMapRangeToJava(unittest.TestCase):
         self.assertEqual(infer.map_range_to_java("[3.0.0,)"), [25])
 
 
-def _make_pom(content, tmpdir=None, filename="pom.xml"):
-    """Write a POM file and return its directory path."""
-    if tmpdir is None:
-        tmpdir = tempfile.mkdtemp()
-    path = os.path.join(tmpdir, filename)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(textwrap.dedent(content))
-    return tmpdir
-
+# ---------------------------------------------------------------------------
+# Compiler version detection
+# ---------------------------------------------------------------------------
 
 class TestFindCompilerVersion(unittest.TestCase):
     def _parse(self, xml_str):
-        import xml.etree.ElementTree as ET
-
         root = ET.fromstring(textwrap.dedent(xml_str))
         strip_ns(root)
         props = infer.get_properties(root)
@@ -240,11 +240,13 @@ class TestFindCompilerVersion(unittest.TestCase):
         self.assertEqual(infer.find_compiler_version(root, props), "11")
 
 
+# ---------------------------------------------------------------------------
+# OpenMRS version detection
+# ---------------------------------------------------------------------------
+
 class TestFindOpenmrsVersion(unittest.TestCase):
     def _run(self, root_xml, submodules=None):
         """Parse root XML and optional submodule POMs, return inferred version."""
-        import xml.etree.ElementTree as ET
-
         tmpdir = tempfile.mkdtemp()
         root_path = os.path.join(tmpdir, "pom.xml")
         with open(root_path, "w") as f:
@@ -366,12 +368,175 @@ class TestFindOpenmrsVersion(unittest.TestCase):
         self.assertEqual(result, "[2.4.0, 2.7.0)")
 
 
+# ---------------------------------------------------------------------------
+# Maven server IDs
+# ---------------------------------------------------------------------------
+
+class TestFindServerIds(unittest.TestCase):
+    def _parse(self, xml_str):
+        root = ET.fromstring(textwrap.dedent(xml_str))
+        strip_ns(root)
+        return root
+
+    def test_both_ids(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <repository>
+                  <id>openmrs-repo-modules</id>
+                  <url>https://example.com/releases</url>
+                </repository>
+                <snapshotRepository>
+                  <id>openmrs-repo-snapshots</id>
+                  <url>https://example.com/snapshots</url>
+                </snapshotRepository>
+              </distributionManagement>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertEqual(release_id, "openmrs-repo-modules")
+        self.assertEqual(snapshot_id, "openmrs-repo-snapshots")
+
+    def test_only_release(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <repository>
+                  <id>my-releases</id>
+                </repository>
+              </distributionManagement>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertEqual(release_id, "my-releases")
+        self.assertIsNone(snapshot_id)
+
+    def test_only_snapshot(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <snapshotRepository>
+                  <id>my-snapshots</id>
+                </snapshotRepository>
+              </distributionManagement>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertIsNone(release_id)
+        self.assertEqual(snapshot_id, "my-snapshots")
+
+    def test_no_distribution_management(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <groupId>org.example</groupId>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertIsNone(release_id)
+        self.assertIsNone(snapshot_id)
+
+    def test_no_namespace(self):
+        root = self._parse("""\
+            <project>
+              <distributionManagement>
+                <repository>
+                  <id>releases</id>
+                </repository>
+                <snapshotRepository>
+                  <id>snapshots</id>
+                </snapshotRepository>
+              </distributionManagement>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertEqual(release_id, "releases")
+        self.assertEqual(snapshot_id, "snapshots")
+
+    def test_empty_ids(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <repository>
+                  <id></id>
+                </repository>
+                <snapshotRepository>
+                  <id></id>
+                </snapshotRepository>
+              </distributionManagement>
+            </project>""")
+        release_id, snapshot_id = infer.find_server_ids(root)
+        self.assertIsNone(release_id)
+        self.assertIsNone(snapshot_id)
+
+
+# ---------------------------------------------------------------------------
+# POM project version
+# ---------------------------------------------------------------------------
+
+class TestFindProjectVersion(unittest.TestCase):
+    def _parse(self, xml_str):
+        root = ET.fromstring(textwrap.dedent(xml_str))
+        strip_ns(root)
+        return root
+
+    def test_direct_version(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <version>1.2.3</version>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "1.2.3")
+
+    def test_snapshot_version(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <version>2.0.0-SNAPSHOT</version>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "2.0.0-SNAPSHOT")
+
+    def test_parent_version_fallback(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <parent>
+                <version>3.1.0</version>
+              </parent>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "3.1.0")
+
+    def test_direct_version_takes_precedence(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <version>1.0.0</version>
+              <parent>
+                <version>2.0.0</version>
+              </parent>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "1.0.0")
+
+    def test_no_version(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <groupId>org.example</groupId>
+            </project>""")
+        self.assertIsNone(infer.find_project_version(root))
+
+    def test_whitespace_stripped(self):
+        root = self._parse("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <version>  1.0.0  </version>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "1.0.0")
+
+    def test_no_namespace(self):
+        root = self._parse("""\
+            <project>
+              <version>4.5.6</version>
+            </project>""")
+        self.assertEqual(infer.find_project_version(root), "4.5.6")
+
+
+# ---------------------------------------------------------------------------
+# End-to-end integration tests
+# ---------------------------------------------------------------------------
+
 class TestEndToEnd(unittest.TestCase):
     """Integration tests that run the full inference pipeline."""
 
     def _run_inference(self, root_xml, submodules=None):
-        import xml.etree.ElementTree as ET
-
         tmpdir = tempfile.mkdtemp()
         root_path = os.path.join(tmpdir, "pom.xml")
         with open(root_path, "w") as f:

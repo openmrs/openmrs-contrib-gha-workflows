@@ -149,47 +149,45 @@ jobs:
           sparse-checkout: release-prepare-perform.sh
           sparse-checkout-cone-mode: false
 
-      - name: Checkout inference scripts
+      - name: Checkout inference action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.workflow_sha }}
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
-      - name: Infer Java version from pom.xml
-        id: infer-java
-        if: ${{ !inputs.java_version }}
-        run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
-
-      - name: Infer Maven server IDs from pom.xml
-        id: infer-server
-        if: ${{ !inputs.maven_release_server_id || !inputs.maven_snapshot_server_id }}
-        run: python3 .gha-workflows/.github/scripts/infer-maven-server-ids.py
+      - name: Infer backend parameters
+        id: infer
+        uses: ./.gha-workflows/.github/actions/infer-backend-params
+        with:
+          main_java_version: ${{ inputs.java_version }}
+          snapshot_server_id: ${{ inputs.maven_snapshot_server_id }}
+          release_server_id: ${{ inputs.maven_release_server_id }}
 
       - name: Resolve Java version
         id: java
         env:
-          INPUT_JAVA_VERSION: ${{ inputs.java_version }}
-          INFERRED_JAVA_VERSION: ${{ steps.infer-java.outputs.main_java_version }}
-          DEFAULT_JAVA_VERSION: '8'
+          INFERRED_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
         run: |
-          VERSION="${INPUT_JAVA_VERSION:-${INFERRED_JAVA_VERSION:-$DEFAULT_JAVA_VERSION}}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=${INFERRED_JAVA_VERSION:-8}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve Maven server IDs
-        id: server
+      - name: Resolve Maven release server ID
+        id: release-server
         env:
-          INPUT_RELEASE_ID: ${{ inputs.maven_release_server_id }}
-          INPUT_SNAPSHOT_ID: ${{ inputs.maven_snapshot_server_id }}
-          INFERRED_RELEASE_ID: ${{ steps.infer-server.outputs.release_server_id }}
-          INFERRED_SNAPSHOT_ID: ${{ steps.infer-server.outputs.snapshot_server_id }}
-          DEFAULT_RELEASE_ID: 'openmrs-repo-modules'
-          DEFAULT_SNAPSHOT_ID: 'openmrs-repo-snapshots'
+          INFERRED_RELEASE_ID: ${{ steps.infer.outputs.release_server_id }}
         run: |
-          echo "release_id=${INPUT_RELEASE_ID:-${INFERRED_RELEASE_ID:-$DEFAULT_RELEASE_ID}}" >> "$GITHUB_OUTPUT"
-          echo "snapshot_id=${INPUT_SNAPSHOT_ID:-${INFERRED_SNAPSHOT_ID:-$DEFAULT_SNAPSHOT_ID}}" >> "$GITHUB_OUTPUT"
+          echo "id=${INFERRED_RELEASE_ID:-openmrs-repo-modules}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Maven snapshot server ID
+        id: snapshot-server
+        env:
+          INFERRED_SNAPSHOT_ID: ${{ steps.infer.outputs.snapshot_server_id }}
+        run: |
+          echo "id=${INFERRED_SNAPSHOT_ID:-openmrs-repo-snapshots}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Java ${{ steps.java.outputs.version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
@@ -201,8 +199,8 @@ jobs:
 
       - name: Set up Maven settings
         env:
-          RELEASE_ID: ${{ steps.server.outputs.release_id }}
-          SNAPSHOT_ID: ${{ steps.server.outputs.snapshot_id }}
+          RELEASE_ID: ${{ steps.release-server.outputs.id }}
+          SNAPSHOT_ID: ${{ steps.snapshot-server.outputs.id }}
         run: |
           for id in "$RELEASE_ID" "$SNAPSHOT_ID"; do
             if [[ ! "$id" =~ ^[a-zA-Z0-9._-]+$ ]]; then

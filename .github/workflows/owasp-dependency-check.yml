@@ -78,31 +78,31 @@ jobs:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.workflow_sha }}
           sparse-checkout: |
+            .github/actions
             .github/scripts
             .github/resources/owasp
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
-      - name: Infer Java version from pom.xml
-        id: infer-java
-        if: steps.detect.outputs.type == 'java' && !inputs.java_version
-        run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
+      - name: Infer backend parameters
+        id: infer-backend
+        if: steps.detect.outputs.type == 'java'
+        uses: ./.gha-workflows/.github/actions/infer-backend-params
+        with:
+          main_java_version: ${{ inputs.java_version }}
 
       - name: Resolve Java version
         id: java
         if: steps.detect.outputs.type == 'java'
         env:
-          INPUT_JAVA_VERSION: ${{ inputs.java_version }}
-          INFERRED_JAVA_VERSION: ${{ steps.infer-java.outputs.main_java_version }}
-          DEFAULT_JAVA_VERSION: '21'
+          INFERRED: ${{ steps.infer-backend.outputs.main_java_version }}
         run: |
-          VERSION="${INPUT_JAVA_VERSION:-${INFERRED_JAVA_VERSION:-$DEFAULT_JAVA_VERSION}}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "version=${INFERRED:-21}" >> "$GITHUB_OUTPUT"
 
       - name: Infer Node.js version from package.json
         id: infer-node
         if: steps.detect.outputs.type == 'node' && !inputs.node_version
-        run: python3 .gha-workflows/.github/scripts/infer-node-version.py
+        run: python3 .gha-workflows/.github/scripts/infer_node_version.py
 
       - name: Resolve Node.js version
         id: node
@@ -145,7 +145,9 @@ jobs:
 
       - name: Build project with Maven
         if: steps.detect.outputs.type == 'java'
-        run: mvn --batch-mode ${{ inputs.maven_args }}
+        env:
+          MAVEN_ARGS: ${{ inputs.maven_args }}
+        run: mvn --batch-mode $MAVEN_ARGS
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@75ba02d6183445fe0761d26e836bde58b1560600 # 1.1.0

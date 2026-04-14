@@ -68,67 +68,33 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Checkout inference scripts
+      - name: Checkout inference action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.workflow_sha }}
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
-      - name: Infer Node.js version from package.json
-        id: infer-node
-        if: ${{ !inputs.node_version }}
-        run: python3 .gha-workflows/.github/scripts/infer-node-version.py
-
-      - name: Infer frontend parameters from package.json
-        id: infer-frontend
-        run: python3 .gha-workflows/.github/scripts/infer-frontend-params.py
-
-      - name: Resolve Node.js version
-        id: node
-        env:
-          INPUT_NODE_VERSION: ${{ inputs.node_version }}
-          INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
-          DEFAULT_NODE_VERSION: '22'
-        run: |
-          echo "version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-$DEFAULT_NODE_VERSION}}" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve build parameters
+      - name: Infer frontend parameters
         id: params
-        env:
-          INPUT_BUILD_COMMAND: ${{ inputs.build_command }}
-          INPUT_ENABLE_TURBOREPO_CACHE: ${{ inputs.enable_turborepo_cache }}
-          INPUT_ARTIFACT_PATH: ${{ inputs.artifact_path }}
-          INPUT_PRE_RELEASE_VERSION_COMMAND: ${{ inputs.pre_release_version_command }}
-          INPUT_PRE_RELEASE_PUBLISH_COMMAND: ${{ inputs.pre_release_publish_command }}
-          INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ inputs.pre_release_patch_publish_command }}
-          INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
-          INFERRED_ENABLE_TURBOREPO_CACHE: ${{ steps.infer-frontend.outputs.enable_turborepo_cache }}
-          INFERRED_ARTIFACT_PATH: ${{ steps.infer-frontend.outputs.artifact_path }}
-          INFERRED_PRE_RELEASE_VERSION_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_version_command }}
-          INFERRED_PRE_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_publish_command }}
-          INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_patch_publish_command }}
-        run: |
-          echo "build_command=${INPUT_BUILD_COMMAND:-${INFERRED_BUILD_COMMAND:-yarn turbo run build --color --concurrency=5}}" >> "$GITHUB_OUTPUT"
-          echo "enable_turborepo_cache=${INPUT_ENABLE_TURBOREPO_CACHE:-${INFERRED_ENABLE_TURBOREPO_CACHE:-false}}" >> "$GITHUB_OUTPUT"
-
-          # These commands may contain shell metacharacters like $ and quotes
-          echo "pre_release_version_command=${INPUT_PRE_RELEASE_VERSION_COMMAND:-${INFERRED_PRE_RELEASE_VERSION_COMMAND:-yarn version \"\$PRERELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
-          echo "pre_release_publish_command=${INPUT_PRE_RELEASE_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public --tag next}}" >> "$GITHUB_OUTPUT"
-          echo "pre_release_patch_publish_command=${INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND}}" >> "$GITHUB_OUTPUT"
-
-          # artifact_path may be multiline (monorepo with multiple workspace globs)
-          RESOLVED_ARTIFACT_PATH="${INPUT_ARTIFACT_PATH:-${INFERRED_ARTIFACT_PATH:-dist}}"
-          echo "artifact_path<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$RESOLVED_ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
+          artifact_path: ${{ inputs.artifact_path }}
+          pre_release_version_command: ${{ inputs.pre_release_version_command }}
+          pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
+          pre_release_patch_publish_command: ${{ inputs.pre_release_patch_publish_command }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
@@ -136,9 +102,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ steps.node.outputs.version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ steps.node.outputs.version }}-modules-
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
 
       - name: 📦 Install dependencies
         run: yarn install --immutable
@@ -159,12 +125,16 @@ jobs:
 
       - name: 🏷️ Compute pre-release version
         id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SUPPORT_PATCH: ${{ inputs.support_patch_branches }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           BASE_VERSION=$(node -e "console.log(require('semver').inc(require('./package.json').version, 'patch'))")
-          if [ "${{ github.ref_name }}" = "main" ] || ! ${{ inputs.support_patch_branches }}; then
-            echo "version=${BASE_VERSION}-pre.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          if [ "$REF_NAME" = "main" ] || [ "$SUPPORT_PATCH" != "true" ]; then
+            echo "version=${BASE_VERSION}-pre.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=${BASE_VERSION}-patch.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            echo "version=${BASE_VERSION}-patch.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 🏷️ Set pre-release version
@@ -229,59 +199,31 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Checkout inference scripts
+      - name: Checkout inference action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.workflow_sha }}
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
-      - name: Infer Node.js version from package.json
-        id: infer-node
-        if: ${{ !inputs.node_version }}
-        run: python3 .gha-workflows/.github/scripts/infer-node-version.py
-
-      - name: Infer frontend parameters from package.json
-        id: infer-frontend
-        run: python3 .gha-workflows/.github/scripts/infer-frontend-params.py
-
-      - name: Resolve Node.js version
-        id: node
-        env:
-          INPUT_NODE_VERSION: ${{ inputs.node_version }}
-          INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
-          DEFAULT_NODE_VERSION: '22'
-        run: |
-          echo "version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-$DEFAULT_NODE_VERSION}}" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve build parameters
+      - name: Infer frontend parameters
         id: params
-        env:
-          INPUT_BUILD_COMMAND: ${{ inputs.build_command }}
-          INPUT_ENABLE_TURBOREPO_CACHE: ${{ inputs.enable_turborepo_cache }}
-          INPUT_ARTIFACT_PATH: ${{ inputs.artifact_path }}
-          INPUT_RELEASE_PUBLISH_COMMAND: ${{ inputs.release_publish_command }}
-          INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
-          INFERRED_ENABLE_TURBOREPO_CACHE: ${{ steps.infer-frontend.outputs.enable_turborepo_cache }}
-          INFERRED_ARTIFACT_PATH: ${{ steps.infer-frontend.outputs.artifact_path }}
-          INFERRED_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.release_publish_command }}
-        run: |
-          echo "build_command=${INPUT_BUILD_COMMAND:-${INFERRED_BUILD_COMMAND:-yarn turbo run build --color --concurrency=5}}" >> "$GITHUB_OUTPUT"
-          echo "enable_turborepo_cache=${INPUT_ENABLE_TURBOREPO_CACHE:-${INFERRED_ENABLE_TURBOREPO_CACHE:-false}}" >> "$GITHUB_OUTPUT"
-          echo "release_publish_command=${INPUT_RELEASE_PUBLISH_COMMAND:-${INFERRED_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public}}" >> "$GITHUB_OUTPUT"
-
-          # artifact_path may be multiline (monorepo with multiple workspace globs)
-          RESOLVED_ARTIFACT_PATH="${INPUT_ARTIFACT_PATH:-${INFERRED_ARTIFACT_PATH:-dist}}"
-          echo "artifact_path<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$RESOLVED_ARTIFACT_PATH" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
+          artifact_path: ${{ inputs.artifact_path }}
+          release_publish_command: ${{ inputs.release_publish_command }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ steps.node.outputs.version }}
+          node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
@@ -289,9 +231,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ steps.node.outputs.version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ steps.node.outputs.version }}-modules-
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
 
       - name: 📦 Install dependencies
         run: yarn install --immutable

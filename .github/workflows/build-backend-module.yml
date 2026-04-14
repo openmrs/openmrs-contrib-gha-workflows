@@ -43,8 +43,8 @@ jobs:
     name: Prepare
     runs-on: ubuntu-latest
     outputs:
-      java_versions: ${{ steps.java.outputs.versions }}
-      main_java_version: ${{ steps.java.outputs.main_version }}
+      java_versions: ${{ steps.params.outputs.java_versions }}
+      main_java_version: ${{ steps.params.outputs.main_java_version }}
       snapshot_server_id: ${{ steps.server.outputs.snapshot_id }}
       deploy_branches: ${{ steps.deploy.outputs.branches }}
     steps:
@@ -53,74 +53,58 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Checkout inference scripts
+      - name: Checkout inference action
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.workflow_sha }}
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
 
-      - name: Infer Java versions from pom.xml
+      - name: Infer backend parameters
         id: infer
-        if: ${{ !inputs.java_versions || !inputs.main_java_version }}
-        run: python3 .gha-workflows/.github/scripts/infer-java-versions.py
+        uses: ./.gha-workflows/.github/actions/infer-backend-params
+        with:
+          java_versions: ${{ inputs.java_versions }}
+          main_java_version: ${{ inputs.main_java_version }}
+          snapshot_server_id: ${{ inputs.maven_server_id }}
 
-      - name: Infer Maven server IDs from pom.xml
-        id: infer-server
-        if: ${{ !inputs.maven_server_id }}
-        run: python3 .gha-workflows/.github/scripts/infer-maven-server-ids.py
-
-      - name: Infer POM project version
-        id: infer-pom-version
-        if: ${{ !inputs.deploy_branch }}
-        run: python3 .gha-workflows/.github/scripts/infer-pom-version.py
-
-      - name: Resolve Maven server ID
-        id: server
+      - name: Validate Java versions
+        id: params
         env:
-          INPUT_SERVER_ID: ${{ inputs.maven_server_id }}
-          INFERRED_SERVER_ID: ${{ steps.infer-server.outputs.snapshot_server_id }}
-          DEFAULT_SERVER_ID: 'openmrs-repo-snapshots'
+          JAVA_VERSIONS: ${{ steps.infer.outputs.java_versions }}
+          MAIN_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
         run: |
-          echo "snapshot_id=${INPUT_SERVER_ID:-${INFERRED_SERVER_ID:-$DEFAULT_SERVER_ID}}" >> "$GITHUB_OUTPUT"
-
-      - name: Resolve Java versions
-        id: java
-        env:
-          INPUT_JAVA_VERSIONS: ${{ inputs.java_versions }}
-          INPUT_MAIN_JAVA_VERSION: ${{ inputs.main_java_version }}
-          INFERRED_JAVA_VERSIONS: ${{ steps.infer.outputs.java_versions }}
-          INFERRED_MAIN_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
-        run: |
-          JAVA_VERSIONS="${INPUT_JAVA_VERSIONS:-$INFERRED_JAVA_VERSIONS}"
           if [ -z "$JAVA_VERSIONS" ]; then
             echo "::error::java_versions could not be determined. Provide it explicitly or ensure pom.xml has an OpenMRS platform dependency."
             exit 1
           fi
-          if echo "$JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
-            echo "versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
-          else
-            echo "versions=[$JAVA_VERSIONS]" >> "$GITHUB_OUTPUT"
-          fi
+          echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
 
-          MAIN_VERSION="${INPUT_MAIN_JAVA_VERSION:-$INFERRED_MAIN_JAVA_VERSION}"
-          if [ -z "$MAIN_VERSION" ]; then
+          if [ -z "$MAIN_JAVA_VERSION" ]; then
             echo "::error::main_java_version could not be determined. Provide it explicitly or ensure pom.xml has compiler settings or an OpenMRS platform dependency."
             exit 1
           fi
-          echo "main_version=$MAIN_VERSION" >> "$GITHUB_OUTPUT"
+          echo "main_java_version=$MAIN_JAVA_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Maven server ID
+        id: server
+        env:
+          INFERRED_ID: ${{ steps.infer.outputs.snapshot_server_id }}
+        run: |
+          echo "snapshot_id=${INFERRED_ID:-openmrs-repo-snapshots}" >> "$GITHUB_OUTPUT"
 
       - name: Resolve deploy branches
         id: deploy
         env:
           INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
           REF_NAME: ${{ github.ref_name }}
-          POM_VERSION: ${{ steps.infer-pom-version.outputs.project_version }}
+          POM_VERSION: ${{ steps.infer.outputs.project_version }}
         run: |
           if [ -n "$INPUT_DEPLOY_BRANCH" ]; then
-            # User supplied explicit branches — use as-is
             if echo "$INPUT_DEPLOY_BRANCH" | jq -e 'type == "array"' > /dev/null 2>&1; then
               echo "branches=$INPUT_DEPLOY_BRANCH" >> "$GITHUB_OUTPUT"
             else
@@ -163,7 +147,9 @@ jobs:
           cache: maven
 
       - name: Build with Maven
-        run: mvn --batch-mode ${{ inputs.maven_args }} -Dmaven.deploy.skip
+        env:
+          MAVEN_ARGS: ${{ inputs.maven_args }}
+        run: mvn --batch-mode $MAVEN_ARGS -Dmaven.deploy.skip
 
       - name: Check for JaCoCo coverage reports
         id: jacoco

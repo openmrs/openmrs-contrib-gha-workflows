@@ -8,7 +8,7 @@ import textwrap
 import unittest
 import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import utils
 
 

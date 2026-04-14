@@ -7,10 +7,8 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(__file__))
-import importlib
-
-infer = importlib.import_module("infer-frontend-params")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+import infer_frontend_params as infer
 
 
 class _FrontendParamsTestBase(unittest.TestCase):
