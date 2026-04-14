@@ -12,7 +12,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pom_utils import parse_pom, write_github_outputs
+from utils import parse_pom, write_github_outputs
 
 PLATFORM_JAVA_MAP = [
     ((2, 0, 0), (2, 4, 0), [8]),

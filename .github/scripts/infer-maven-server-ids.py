@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pom_utils import parse_pom, write_github_outputs
+from utils import parse_pom, write_github_outputs
 
 
 def find_server_ids(root):

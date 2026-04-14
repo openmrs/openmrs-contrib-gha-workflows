@@ -11,7 +11,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pom_utils import write_github_outputs
+from utils import write_github_outputs
 
 
 def infer_node_version(path="package.json"):

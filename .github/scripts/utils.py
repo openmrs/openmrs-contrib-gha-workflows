@@ -1,4 +1,4 @@
-"""Shared POM/XML utilities for GitHub Actions inference scripts."""
+"""Shared utilities for GitHub Actions inference scripts."""
 
 import os
 import sys
@@ -38,16 +38,22 @@ def write_github_outputs(outputs):
 
     Args:
         outputs: dict of {key: value} pairs. None values are skipped.
+
+    Values containing newlines use the heredoc delimiter syntax required
+    by GitHub Actions for multiline outputs.
     """
-    lines = []
+    entries = []
     for key, value in outputs.items():
         if value is not None:
-            lines.append(f"{key}={value}")
-    if not lines:
+            if "\n" in str(value):
+                entries.append(f"{key}<<EOF\n{value}\nEOF")
+            else:
+                entries.append(f"{key}={value}")
+    if not entries:
         return
     out_file = os.environ.get("GITHUB_OUTPUT", "")
     if out_file:
         with open(out_file, "a") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write("\n".join(entries) + "\n")
     else:
-        print("\n".join(lines))
+        print("\n".join(entries))

@@ -10,7 +10,7 @@ import unittest
 # Import the module under test from the same directory
 sys.path.insert(0, os.path.dirname(__file__))
 import importlib
-from pom_utils import strip_ns
+from utils import strip_ns
 
 infer = importlib.import_module("infer-java-versions")
 
