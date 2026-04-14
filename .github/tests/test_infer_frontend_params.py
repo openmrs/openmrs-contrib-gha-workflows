@@ -276,12 +276,12 @@ class TestEdgeCases(_FrontendParamsTestBase):
         self.assertEqual(result, {})
 
     def test_monorepo_missing_name(self):
-        """Monorepo without a name field should still work."""
+        """Monorepo without a name field should still work (no --exclude flag)."""
         path = self._write_package_json({"workspaces": ["packages/*"], "scripts": {}})
         self._write_turbo_json()
         result = infer.infer_params(path, self.tmpdir)
         self.assertEqual(result["is_monorepo"], "true")
-        self.assertIn("--exclude ", result["pre_release_version_command"])
+        self.assertNotIn("--exclude", result["pre_release_version_command"])
 
     def test_workspaces_as_object_format(self):
         path = self._write_package_json(

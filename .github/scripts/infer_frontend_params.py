@@ -99,10 +99,12 @@ def infer_params(path="package.json", base_dir=None):
         outputs["verify_command"] = "yarn verify --concurrency=5"
         outputs["artifact_path"] = workspace_artifact_paths(pkg)
 
+        exclude_flag = f" --exclude {root_name}" if root_name else ""
+
         # Version command: set pre-release version across all workspaces
         outputs["pre_release_version_command"] = (
             "yarn workspaces foreach --all --topological"
-            f" --exclude {root_name}"
+            f"{exclude_flag}"
             ' version "$PRERELEASE_VERSION"'
         )
 
@@ -114,7 +116,7 @@ def infer_params(path="package.json", base_dir=None):
         else:
             outputs["pre_release_publish_command"] = (
                 "yarn workspaces foreach --all --topological"
-                f" --exclude {root_name}"
+                f"{exclude_flag}"
                 " npm publish --access public --tag next"
             )
 
@@ -128,7 +130,7 @@ def infer_params(path="package.json", base_dir=None):
         else:
             outputs["release_publish_command"] = (
                 "yarn workspaces foreach --all --topological"
-                f" --exclude {root_name}"
+                f"{exclude_flag}"
                 " npm publish --access public"
             )
     else:

@@ -12,7 +12,7 @@ on:
         type: string
         default: ''
       enable_turborepo_cache:
-        description: 'Enable Turborepo remote cache via GitHub Artifacts. If omitted, inferred (true for monorepos).'
+        description: 'Enable Turborepo remote cache via GitHub Artifacts. If omitted, inferred (true when turbo.json is present).'
         type: string
         default: ''
       pre_release_version_command:

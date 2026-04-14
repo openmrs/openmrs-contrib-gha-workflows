@@ -249,13 +249,13 @@ def main():
     openmrs_ver = find_openmrs_version(root, props)
     java_versions = map_to_java(openmrs_ver) if openmrs_ver else None
 
-    if (
-        compiler_version
-        and java_versions
-        and int(compiler_version) not in java_versions
-    ):
-        java_versions.append(int(compiler_version))
-        java_versions.sort()
+    if compiler_version and java_versions:
+        compiler_int = int(compiler_version)
+        # Only build against Java versions that can satisfy the compiler requirement
+        java_versions = [v for v in java_versions if v >= compiler_int]
+        if compiler_int not in java_versions:
+            java_versions.append(compiler_int)
+            java_versions.sort()
 
     if java_versions:
         main_java = str(min(java_versions))

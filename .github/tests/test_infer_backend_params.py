@@ -562,13 +562,12 @@ class TestEndToEnd(unittest.TestCase):
 
             java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
 
-            if (
-                compiler_version
-                and java_versions
-                and int(compiler_version) not in java_versions
-            ):
-                java_versions.append(int(compiler_version))
-                java_versions.sort()
+            if compiler_version and java_versions:
+                compiler_int = int(compiler_version)
+                java_versions = [v for v in java_versions if v >= compiler_int]
+                if compiler_int not in java_versions:
+                    java_versions.append(compiler_int)
+                    java_versions.sort()
 
             if java_versions:
                 main_java = str(min(java_versions))
@@ -637,8 +636,8 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(main, "8")
         self.assertEqual(versions, [8, 11, 17, 21])
 
-    def test_main_is_min_not_compiler_target(self):
-        """main_java_version is min(java_versions), not the compiler target."""
+    def test_compiler_filters_lower_java_versions(self):
+        """Java versions below the compiler requirement are excluded from the matrix."""
         main, versions = self._run_inference("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
@@ -653,8 +652,8 @@ class TestEndToEnd(unittest.TestCase):
                 </dependency>
               </dependencies>
             </project>""")
-        self.assertEqual(main, "8")
-        self.assertEqual(versions, [8, 11, 17])
+        self.assertEqual(main, "11")
+        self.assertEqual(versions, [11, 17])
 
     def test_main_java_added_to_versions_if_missing(self):
         main, versions = self._run_inference("""\
