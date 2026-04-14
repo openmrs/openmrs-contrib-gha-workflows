@@ -15,7 +15,11 @@ class _FrontendParamsTestBase(unittest.TestCase):
     """Shared helpers for writing package.json and turbo.json to a temp dir."""
 
     def setUp(self):
-        self.tmpdir = tempfile.mkdtemp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
 
     def _write_package_json(self, content):
         path = os.path.join(self.tmpdir, "package.json")

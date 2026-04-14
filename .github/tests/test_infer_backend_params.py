@@ -247,27 +247,27 @@ class TestFindCompilerVersion(unittest.TestCase):
 class TestFindOpenmrsVersion(unittest.TestCase):
     def _run(self, root_xml, submodules=None):
         """Parse root XML and optional submodule POMs, return inferred version."""
-        tmpdir = tempfile.mkdtemp()
-        root_path = os.path.join(tmpdir, "pom.xml")
-        with open(root_path, "w") as f:
-            f.write(textwrap.dedent(root_xml))
-        if submodules:
-            for name, xml_content in submodules.items():
-                mod_dir = os.path.join(tmpdir, name)
-                os.makedirs(mod_dir, exist_ok=True)
-                with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
-                    f.write(textwrap.dedent(xml_content))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_path = os.path.join(tmpdir, "pom.xml")
+            with open(root_path, "w") as f:
+                f.write(textwrap.dedent(root_xml))
+            if submodules:
+                for name, xml_content in submodules.items():
+                    mod_dir = os.path.join(tmpdir, name)
+                    os.makedirs(mod_dir, exist_ok=True)
+                    with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
+                        f.write(textwrap.dedent(xml_content))
 
-        root = ET.parse(root_path).getroot()
-        strip_ns(root)
-        props = infer.get_properties(root)
+            root = ET.parse(root_path).getroot()
+            strip_ns(root)
+            props = infer.get_properties(root)
 
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            return infer.find_openmrs_version(root, props)
-        finally:
-            os.chdir(old_cwd)
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                return infer.find_openmrs_version(root, props)
+            finally:
+                os.chdir(old_cwd)
 
     def test_dependency_management(self):
         result = self._run("""\
@@ -537,47 +537,47 @@ class TestEndToEnd(unittest.TestCase):
     """Integration tests that run the full inference pipeline."""
 
     def _run_inference(self, root_xml, submodules=None):
-        tmpdir = tempfile.mkdtemp()
-        root_path = os.path.join(tmpdir, "pom.xml")
-        with open(root_path, "w") as f:
-            f.write(textwrap.dedent(root_xml))
-        if submodules:
-            for name, xml_content in submodules.items():
-                mod_dir = os.path.join(tmpdir, name)
-                os.makedirs(mod_dir, exist_ok=True)
-                with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
-                    f.write(textwrap.dedent(xml_content))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_path = os.path.join(tmpdir, "pom.xml")
+            with open(root_path, "w") as f:
+                f.write(textwrap.dedent(root_xml))
+            if submodules:
+                for name, xml_content in submodules.items():
+                    mod_dir = os.path.join(tmpdir, name)
+                    os.makedirs(mod_dir, exist_ok=True)
+                    with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
+                        f.write(textwrap.dedent(xml_content))
 
-        root = ET.parse(root_path).getroot()
-        strip_ns(root)
-        props = infer.get_properties(root)
-        compiler_version = infer.find_compiler_version(root, props)
+            root = ET.parse(root_path).getroot()
+            strip_ns(root)
+            props = infer.get_properties(root)
+            compiler_version = infer.find_compiler_version(root, props)
 
-        old_cwd = os.getcwd()
-        os.chdir(tmpdir)
-        try:
-            openmrs_ver = infer.find_openmrs_version(root, props)
-        finally:
-            os.chdir(old_cwd)
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                openmrs_ver = infer.find_openmrs_version(root, props)
+            finally:
+                os.chdir(old_cwd)
 
-        java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
+            java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
 
-        if (
-            compiler_version
-            and java_versions
-            and int(compiler_version) not in java_versions
-        ):
-            java_versions.append(int(compiler_version))
-            java_versions.sort()
+            if (
+                compiler_version
+                and java_versions
+                and int(compiler_version) not in java_versions
+            ):
+                java_versions.append(int(compiler_version))
+                java_versions.sort()
 
-        if java_versions:
-            main_java = str(min(java_versions))
-        elif compiler_version:
-            main_java = compiler_version
-        else:
-            main_java = None
+            if java_versions:
+                main_java = str(min(java_versions))
+            elif compiler_version:
+                main_java = compiler_version
+            else:
+                main_java = None
 
-        return main_java, java_versions
+            return main_java, java_versions
 
     def test_typical_module_target_1_8_openmrs_2_6(self):
         main, versions = self._run_inference("""\

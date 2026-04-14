@@ -42,9 +42,15 @@ class TestStripNs(unittest.TestCase):
 
 
 class TestParsePom(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
     def test_valid_pom(self):
-        tmpdir = tempfile.mkdtemp()
-        pom_path = os.path.join(tmpdir, "pom.xml")
+        pom_path = os.path.join(self.tmpdir, "pom.xml")
         with open(pom_path, "w") as f:
             f.write(
                 textwrap.dedent("""\
@@ -63,8 +69,7 @@ class TestParsePom(unittest.TestCase):
         self.assertIsNone(root)
 
     def test_invalid_xml(self):
-        tmpdir = tempfile.mkdtemp()
-        pom_path = os.path.join(tmpdir, "pom.xml")
+        pom_path = os.path.join(self.tmpdir, "pom.xml")
         with open(pom_path, "w") as f:
             f.write("this is not xml")
         root = utils.parse_pom(pom_path)
@@ -72,112 +77,77 @@ class TestParsePom(unittest.TestCase):
 
 
 class TestWriteGithubOutputs(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
+        self._old_github_output = os.environ.get("GITHUB_OUTPUT")
+
+    def tearDown(self):
+        if self._old_github_output is None:
+            os.environ.pop("GITHUB_OUTPUT", None)
+        else:
+            os.environ["GITHUB_OUTPUT"] = self._old_github_output
+        self._tmpdir.cleanup()
+
     def test_writes_to_file(self):
-        tmpdir = tempfile.mkdtemp()
-        out_path = os.path.join(tmpdir, "output")
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ["GITHUB_OUTPUT"] = out_path
-            utils.write_github_outputs({"key1": "val1", "key2": "val2"})
-            with open(out_path) as f:
-                content = f.read()
-            self.assertIn("key1=val1", content)
-            self.assertIn("key2=val2", content)
-        finally:
-            if old_env is None:
-                os.environ.pop("GITHUB_OUTPUT", None)
-            else:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        out_path = os.path.join(self.tmpdir, "output")
+        os.environ["GITHUB_OUTPUT"] = out_path
+        utils.write_github_outputs({"key1": "val1", "key2": "val2"})
+        with open(out_path) as f:
+            content = f.read()
+        self.assertIn("key1=val1", content)
+        self.assertIn("key2=val2", content)
 
     def test_skips_none_values(self):
-        tmpdir = tempfile.mkdtemp()
-        out_path = os.path.join(tmpdir, "output")
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ["GITHUB_OUTPUT"] = out_path
-            utils.write_github_outputs({"present": "yes", "absent": None})
-            with open(out_path) as f:
-                content = f.read()
-            self.assertIn("present=yes", content)
-            self.assertNotIn("absent", content)
-        finally:
-            if old_env is None:
-                os.environ.pop("GITHUB_OUTPUT", None)
-            else:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        out_path = os.path.join(self.tmpdir, "output")
+        os.environ["GITHUB_OUTPUT"] = out_path
+        utils.write_github_outputs({"present": "yes", "absent": None})
+        with open(out_path) as f:
+            content = f.read()
+        self.assertIn("present=yes", content)
+        self.assertNotIn("absent", content)
 
     def test_all_none_writes_nothing(self):
-        tmpdir = tempfile.mkdtemp()
-        out_path = os.path.join(tmpdir, "output")
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ["GITHUB_OUTPUT"] = out_path
-            utils.write_github_outputs({"a": None, "b": None})
-            self.assertFalse(os.path.exists(out_path))
-        finally:
-            if old_env is None:
-                os.environ.pop("GITHUB_OUTPUT", None)
-            else:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        out_path = os.path.join(self.tmpdir, "output")
+        os.environ["GITHUB_OUTPUT"] = out_path
+        utils.write_github_outputs({"a": None, "b": None})
+        self.assertFalse(os.path.exists(out_path))
 
-    def test_prints_to_stdout_without_github_output(
-        self,
-    ):
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ.pop("GITHUB_OUTPUT", None)
-            import io
-            from unittest.mock import patch
+    def test_prints_to_stdout_without_github_output(self):
+        os.environ.pop("GITHUB_OUTPUT", None)
+        import io
+        from unittest.mock import patch
 
-            with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
-                utils.write_github_outputs({"key": "value"})
-                self.assertIn("key=value", mock_out.getvalue())
-        finally:
-            if old_env is not None:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        with patch("sys.stdout", new_callable=io.StringIO) as mock_out:
+            utils.write_github_outputs({"key": "value"})
+            self.assertIn("key=value", mock_out.getvalue())
 
     def test_multiline_value_uses_heredoc_syntax(self):
-        tmpdir = tempfile.mkdtemp()
-        out_path = os.path.join(tmpdir, "output")
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ["GITHUB_OUTPUT"] = out_path
-            utils.write_github_outputs({"paths": "a/dist\nb/dist"})
-            with open(out_path) as f:
-                content = f.read()
-            self.assertIn("paths<<EOF", content)
-            self.assertIn("a/dist\nb/dist", content)
-            self.assertIn("EOF", content)
-            # Should NOT use key=value format for multiline
-            self.assertNotIn("paths=", content)
-        finally:
-            if old_env is None:
-                os.environ.pop("GITHUB_OUTPUT", None)
-            else:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        out_path = os.path.join(self.tmpdir, "output")
+        os.environ["GITHUB_OUTPUT"] = out_path
+        utils.write_github_outputs({"paths": "a/dist\nb/dist"})
+        with open(out_path) as f:
+            content = f.read()
+        self.assertIn("paths<<EOF", content)
+        self.assertIn("a/dist\nb/dist", content)
+        self.assertIn("EOF", content)
+        # Should NOT use key=value format for multiline
+        self.assertNotIn("paths=", content)
 
     def test_mixed_single_and_multiline_values(self):
-        tmpdir = tempfile.mkdtemp()
-        out_path = os.path.join(tmpdir, "output")
-        old_env = os.environ.get("GITHUB_OUTPUT")
-        try:
-            os.environ["GITHUB_OUTPUT"] = out_path
-            utils.write_github_outputs(
-                {
-                    "simple": "value",
-                    "multi": "line1\nline2",
-                }
-            )
-            with open(out_path) as f:
-                content = f.read()
-            self.assertIn("simple=value", content)
-            self.assertIn("multi<<EOF", content)
-            self.assertIn("line1\nline2", content)
-        finally:
-            if old_env is None:
-                os.environ.pop("GITHUB_OUTPUT", None)
-            else:
-                os.environ["GITHUB_OUTPUT"] = old_env
+        out_path = os.path.join(self.tmpdir, "output")
+        os.environ["GITHUB_OUTPUT"] = out_path
+        utils.write_github_outputs(
+            {
+                "simple": "value",
+                "multi": "line1\nline2",
+            }
+        )
+        with open(out_path) as f:
+            content = f.read()
+        self.assertIn("simple=value", content)
+        self.assertIn("multi<<EOF", content)
+        self.assertIn("line1\nline2", content)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,10 @@ inputs:
     description: 'Override: Command to publish a release'
     required: false
     default: ''
+  resolve_pre_release:
+    description: 'Whether to resolve pre-release parameters. Set to "false" for release-only jobs.'
+    required: false
+    default: 'true'
 
 outputs:
   node_version:
@@ -96,6 +100,7 @@ runs:
         INPUT_PRE_RELEASE_PUBLISH_COMMAND: ${{ inputs.pre_release_publish_command }}
         INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ inputs.pre_release_patch_publish_command }}
         INPUT_RELEASE_PUBLISH_COMMAND: ${{ inputs.release_publish_command }}
+        RESOLVE_PRE_RELEASE: ${{ inputs.resolve_pre_release }}
         INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
         INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
         INFERRED_VERIFY_COMMAND: ${{ steps.infer-frontend.outputs.verify_command }}
@@ -111,9 +116,11 @@ runs:
         echo "verify_command=${INPUT_VERIFY_COMMAND:-${INFERRED_VERIFY_COMMAND:-yarn verify}}" >> "$GITHUB_OUTPUT"
         echo "enable_turborepo_cache=${INPUT_ENABLE_TURBOREPO_CACHE:-${INFERRED_ENABLE_TURBOREPO_CACHE:-false}}" >> "$GITHUB_OUTPUT"
 
-        echo "pre_release_version_command=${INPUT_PRE_RELEASE_VERSION_COMMAND:-${INFERRED_PRE_RELEASE_VERSION_COMMAND:-yarn version \"\$PRERELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
-        echo "pre_release_publish_command=${INPUT_PRE_RELEASE_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public --tag next}}" >> "$GITHUB_OUTPUT"
-        echo "pre_release_patch_publish_command=${INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND}}" >> "$GITHUB_OUTPUT"
+        if [ "$RESOLVE_PRE_RELEASE" = "true" ]; then
+          echo "pre_release_version_command=${INPUT_PRE_RELEASE_VERSION_COMMAND:-${INFERRED_PRE_RELEASE_VERSION_COMMAND:-yarn version \"\$PRERELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
+          echo "pre_release_publish_command=${INPUT_PRE_RELEASE_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public --tag next}}" >> "$GITHUB_OUTPUT"
+          echo "pre_release_patch_publish_command=${INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND}}" >> "$GITHUB_OUTPUT"
+        fi
         echo "release_publish_command=${INPUT_RELEASE_PUBLISH_COMMAND:-${INFERRED_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public}}" >> "$GITHUB_OUTPUT"
 
         # artifact_path may be multiline (monorepo with multiple workspace globs)

@@ -12,10 +12,15 @@ import infer_node_version as infer
 
 
 class TestInferNodeVersion(unittest.TestCase):
-    def _write_package_json(self, content, tmpdir=None):
-        if tmpdir is None:
-            tmpdir = tempfile.mkdtemp()
-        path = os.path.join(tmpdir, "package.json")
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmpdir = self._tmpdir.name
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _write_package_json(self, content):
+        path = os.path.join(self.tmpdir, "package.json")
         with open(path, "w") as f:
             json.dump(content, f)
         return path
@@ -52,8 +57,7 @@ class TestInferNodeVersion(unittest.TestCase):
         self.assertIsNone(infer.infer_node_version("/nonexistent/package.json"))
 
     def test_invalid_json(self):
-        tmpdir = tempfile.mkdtemp()
-        path = os.path.join(tmpdir, "package.json")
+        path = os.path.join(self.tmpdir, "package.json")
         with open(path, "w") as f:
             f.write("not json")
         self.assertIsNone(infer.infer_node_version(path))

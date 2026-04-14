@@ -219,6 +219,7 @@ jobs:
           enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
           artifact_path: ${{ inputs.artifact_path }}
           release_publish_command: ${{ inputs.release_publish_command }}
+          resolve_pre_release: 'false'
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0

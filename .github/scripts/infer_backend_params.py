@@ -20,6 +20,7 @@ from utils import parse_pom, write_github_outputs
 
 # Maps OpenMRS platform version ranges to the Java versions they support.
 # Each entry is (lower_inclusive, upper_exclusive_or_None, java_versions).
+# Update this table when new platform versions add or drop Java support.
 PLATFORM_JAVA_MAP = [
     ((2, 0, 0), (2, 4, 0), [8]),
     ((2, 4, 0), (2, 7, 0), [8, 11]),
