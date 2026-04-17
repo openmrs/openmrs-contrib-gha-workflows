@@ -4,13 +4,11 @@ on:
   workflow_call:
     inputs:
       java_version:
-        description: 'Java version to use for the build'
+        description: 'Java version to use for the build. If omitted, inferred from Maven compiler settings in pom.xml.'
         type: string
-        default: '21'
       node_version:
-        description: 'Node.js version to use for the build'
+        description: 'Node.js version to use for the build. If omitted, inferred from engines.node in package.json.'
         type: string
-        default: '22.x'
       java_distribution:
         description: 'Java distribution'
         type: string
@@ -74,11 +72,53 @@ jobs:
           echo "Could not detect project type. Expected pom.xml or package.json at repo root."
           exit 1
 
-      - name: Set up Java ${{ inputs.java_version }}
+      - name: Checkout inference scripts and resources
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+            .github/resources/owasp
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer backend parameters
+        id: infer-backend
+        if: steps.detect.outputs.type == 'java'
+        uses: ./.gha-workflows/.github/actions/infer-backend-params
+        with:
+          main_java_version: ${{ inputs.java_version }}
+
+      - name: Resolve Java version
+        id: java
+        if: steps.detect.outputs.type == 'java'
+        env:
+          INFERRED: ${{ steps.infer-backend.outputs.main_java_version }}
+        run: |
+          echo "version=${INFERRED:-21}" >> "$GITHUB_OUTPUT"
+
+      - name: Infer Node.js version from package.json
+        id: infer-node
+        if: steps.detect.outputs.type == 'node' && !inputs.node_version
+        run: python3 .gha-workflows/.github/scripts/infer_node_version.py
+
+      - name: Resolve Node.js version
+        id: node
+        if: steps.detect.outputs.type == 'node'
+        env:
+          INPUT_NODE_VERSION: ${{ inputs.node_version }}
+          INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
+          DEFAULT_NODE_VERSION: '22'
+        run: |
+          echo "version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-$DEFAULT_NODE_VERSION}}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Java ${{ steps.java.outputs.version }}
         if: steps.detect.outputs.type == 'java'
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
-          java-version: ${{ inputs.java_version }}
+          java-version: ${{ steps.java.outputs.version }}
           distribution: ${{ inputs.java_distribution }}
           cache: maven
 
@@ -86,7 +126,7 @@ jobs:
         if: steps.detect.outputs.type == 'node'
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ inputs.node_version }}
+          node-version: ${{ steps.node.outputs.version }}
 
       - name: Check for suppression file
         id: suppression
@@ -99,21 +139,15 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout default suppression file
-        if: steps.suppression.outputs.exists == 'false'
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          path: .gha-workflows
-          sparse-checkout: .github/resources/owasp
-
       - name: Copy default suppression file
         if: steps.suppression.outputs.exists == 'false'
         run: cp .gha-workflows/.github/resources/owasp/dependency-check-suppressions.xml "${SUPPRESSION_FILE}"
 
       - name: Build project with Maven
         if: steps.detect.outputs.type == 'java'
-        run: mvn --batch-mode ${{ inputs.maven_args }}
+        env:
+          MAVEN_ARGS: ${{ inputs.maven_args }}
+        run: mvn --batch-mode $MAVEN_ARGS
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@75ba02d6183445fe0761d26e836bde58b1560600 # 1.1.0

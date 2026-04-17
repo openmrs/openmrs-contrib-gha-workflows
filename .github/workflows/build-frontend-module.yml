@@ -4,83 +4,104 @@ on:
   workflow_call:
     inputs:
       node_version:
-        description: 'Node.js version to use'
+        description: 'Node.js version to use. If omitted, inferred from engines.node in package.json.'
         type: string
-        default: '22'
       build_command:
-        description: 'Command to build the project'
+        description: 'Command to build the project. If omitted, inferred from package.json.'
         type: string
-        default: 'yarn turbo run build --color --concurrency=5'
+        default: ''
       verify_command:
-        description: 'Command to run lint, type checks, and tests'
+        description: 'Command to run lint, type checks, and tests. If omitted, inferred from package.json.'
         type: string
-        default: 'yarn verify'
+        default: ''
       pre_verify_command:
         description: 'Optional command to run before verify (e.g., yarn check-translations). Skipped if empty.'
         type: string
         default: ''
       enable_turborepo_cache:
-        description: 'Enable Turborepo remote cache via GitHub Artifacts'
-        type: boolean
-        default: false
-      artifact_path:
-        description: 'Path(s) to build artifacts to upload (glob supported)'
+        description: 'Enable Turborepo remote cache via GitHub Artifacts. If omitted, inferred (true when turbo.json is present).'
         type: string
-        default: 'dist'
+        default: ''
+      artifact_path:
+        description: 'Path(s) to build artifacts to upload (glob supported). If omitted, inferred from package.json.'
+        type: string
+        default: ''
 
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       actions: read
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Checkout inference action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer frontend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          verify_command: ${{ inputs.verify_command }}
+          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
+          artifact_path: ${{ inputs.artifact_path }}
+
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ inputs.node_version }}
+          node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
 
       - name: 🗂️ Cache node_modules
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
 
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
       - name: 🚀 Setup Turborepo cache
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           server-token: 'turbo-token'
 
       - name: 🔧 Configure Turborepo environment
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         run: |
           echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
           echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
           echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
 
       - name: 🏗️ Run build
-        run: ${{ inputs.build_command }}
+        run: ${{ steps.params.outputs.build_command }}
 
       - name: 🔍 Run pre-verify command
         if: inputs.pre_verify_command != ''
         run: ${{ inputs.pre_verify_command }}
 
       - name: 🔍 Run lint, type checks and tests
-        run: ${{ inputs.verify_command }}
+        run: ${{ steps.params.outputs.verify_command }}
 
       - name: 📤 Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ github.event.repository.name }}-packages
-          path: ${{ inputs.artifact_path }}
+          path: ${{ steps.params.outputs.artifact_path }}

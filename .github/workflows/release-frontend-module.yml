@@ -5,36 +5,35 @@ on:
   workflow_call:
     inputs:
       node_version:
-        description: 'Node.js version to use'
+        description: 'Node.js version to use. If omitted, inferred from engines.node in package.json.'
         type: string
-        default: '22'
       build_command:
-        description: 'Command to build the project'
+        description: 'Command to build the project. If omitted, inferred from package.json.'
         type: string
-        default: 'yarn turbo run build --color --concurrency=5'
+        default: ''
       enable_turborepo_cache:
-        description: 'Enable Turborepo remote cache via GitHub Artifacts'
-        type: boolean
-        default: false
+        description: 'Enable Turborepo remote cache via GitHub Artifacts. If omitted, inferred (true when turbo.json is present).'
+        type: string
+        default: ''
       pre_release_version_command:
         description: >-
           Command to set the pre-release version.
           Available env vars: PRERELEASE_VERSION (e.g., 1.2.4-pre.42), GITHUB_RUN_NUMBER.
-          Default works for single-package repos.
+          If omitted, inferred from package.json.
         type: string
-        default: 'yarn version "$PRERELEASE_VERSION"'
+        default: ''
       pre_release_publish_command:
-        description: 'Command to publish a pre-release from the main branch'
+        description: 'Command to publish a pre-release from the main branch. If omitted, inferred from package.json.'
         type: string
-        default: 'yarn npm publish --access public --tag next'
+        default: ''
       pre_release_patch_publish_command:
         description: 'Command to publish a pre-release from a patch branch. If empty, patch branch publishing is skipped.'
         type: string
         default: ''
       release_publish_command:
-        description: 'Command to publish a release'
+        description: 'Command to publish a release. If omitted, inferred from package.json.'
         type: string
-        default: 'yarn npm publish --access public'
+        default: ''
       support_patch_branches:
         description: 'Whether to support patch/* branches for pre-releases'
         type: boolean
@@ -44,9 +43,9 @@ on:
         type: boolean
         default: true
       artifact_path:
-        description: 'Path(s) to build artifacts to upload (glob supported)'
+        description: 'Path(s) to build artifacts to upload (glob supported). If omitted, inferred from package.json.'
         type: string
-        default: 'dist'
+        default: ''
     secrets:
       NPM_AUTH_TOKEN:
         description: 'NPM authentication token for publishing'
@@ -69,10 +68,33 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Checkout inference action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer frontend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
+          artifact_path: ${{ inputs.artifact_path }}
+          pre_release_version_command: ${{ inputs.pre_release_version_command }}
+          pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
+          pre_release_patch_publish_command: ${{ inputs.pre_release_patch_publish_command }}
+
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ inputs.node_version }}
+          node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
@@ -80,22 +102,22 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
 
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
       - name: 🚀 Setup Turborepo cache
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           server-token: 'turbo-token'
 
       - name: 🔧 Configure Turborepo environment
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         run: |
           echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
           echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
@@ -103,21 +125,25 @@ jobs:
 
       - name: 🏷️ Compute pre-release version
         id: version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          SUPPORT_PATCH: ${{ inputs.support_patch_branches }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           BASE_VERSION=$(node -e "console.log(require('semver').inc(require('./package.json').version, 'patch'))")
-          if [ "${{ github.ref_name }}" = "main" ] || ! ${{ inputs.support_patch_branches }}; then
-            echo "version=${BASE_VERSION}-pre.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          if [ "$REF_NAME" = "main" ] || [ "$SUPPORT_PATCH" != "true" ]; then
+            echo "version=${BASE_VERSION}-pre.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=${BASE_VERSION}-patch.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            echo "version=${BASE_VERSION}-patch.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 🏷️ Set pre-release version
-        run: ${{ inputs.pre_release_version_command }}
+        run: ${{ steps.params.outputs.pre_release_version_command }}
         env:
           PRERELEASE_VERSION: ${{ steps.version.outputs.version }}
 
       - name: 🏗️ Run build
-        run: ${{ inputs.build_command }}
+        run: ${{ steps.params.outputs.build_command }}
 
       - name: 🔧 Configure Git
         run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
@@ -127,7 +153,7 @@ jobs:
 
       - name: 📤 Publish pre-release (main)
         if: github.ref_name == 'main'
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.pre_release_publish_command }}
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.pre_release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
@@ -135,8 +161,8 @@ jobs:
         if: >-
           inputs.support_patch_branches
           && startsWith(github.ref_name, 'patch/')
-          && inputs.pre_release_patch_publish_command != ''
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.pre_release_patch_publish_command }}
+          && steps.params.outputs.pre_release_patch_publish_command != ''
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.pre_release_patch_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
@@ -144,7 +170,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ github.event.repository.name }}-packages
-          path: ${{ inputs.artifact_path }}
+          path: ${{ steps.params.outputs.artifact_path }}
           overwrite: true
 
   deploy:
@@ -173,10 +199,32 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Checkout inference action
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer frontend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
+          artifact_path: ${{ inputs.artifact_path }}
+          release_publish_command: ${{ inputs.release_publish_command }}
+          resolve_pre_release: 'false'
+
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
-          node-version: ${{ inputs.node_version }}
+          node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
           registry-url: 'https://registry.npmjs.org'
 
@@ -184,31 +232,38 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: '**/node_modules'
-          key: ${{ runner.os }}-node-${{ inputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
           restore-keys: |
-            ${{ runner.os }}-node-${{ inputs.node_version }}-modules-
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
 
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
       - name: 🚀 Setup Turborepo cache
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           server-token: 'turbo-token'
 
       - name: 🔧 Configure Turborepo environment
-        if: inputs.enable_turborepo_cache
+        if: steps.params.outputs.enable_turborepo_cache == 'true'
         run: |
           echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
           echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
           echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
 
       - name: 🏗️ Run build
-        run: ${{ inputs.build_command }}
+        run: ${{ steps.params.outputs.build_command }}
 
       - name: 📢 Publish release
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ inputs.release_publish_command }}
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.event.repository.name }}-packages
+          path: ${{ steps.params.outputs.artifact_path }}
+          overwrite: true

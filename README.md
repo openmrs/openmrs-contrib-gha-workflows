@@ -4,7 +4,7 @@ Collection of github centralised workflows that are automatically synced to othe
 
 ## OWASP Dependency-Check
 
-Reusable workflow that runs [OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) against Java
+There is a reusable workflow that runs [OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) against Java
 and Node.js projects. It auto-detects project type, builds the project, scans dependencies against the NVD, and uploads
 the report as an artifact. On push/dispatch events it also syncs the JSON report to
 the [vulnerability dashboard repo](https://github.com/openmrs/openmrs-contrib-dependency-vulnerability-dashboard). The

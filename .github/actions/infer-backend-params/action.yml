@@ -1,0 +1,79 @@
+name: Infer Backend Parameters
+description: >
+  Infer Java versions, Maven server IDs, and project version from pom.xml.
+  Accepts optional explicit overrides; falls back to inference, then empty.
+
+inputs:
+  java_versions:
+    description: 'Override: Java versions JSON array (e.g. [8, 11, 17])'
+    required: false
+    default: ''
+  main_java_version:
+    description: 'Override: Main Java version for publishing'
+    required: false
+    default: ''
+  snapshot_server_id:
+    description: 'Override: Maven snapshot server ID'
+    required: false
+    default: ''
+  release_server_id:
+    description: 'Override: Maven release server ID'
+    required: false
+    default: ''
+
+outputs:
+  java_versions:
+    description: 'Resolved Java versions as a JSON array, or empty'
+    value: ${{ steps.resolve.outputs.java_versions }}
+  main_java_version:
+    description: 'Resolved main Java version, or empty'
+    value: ${{ steps.resolve.outputs.main_java_version }}
+  snapshot_server_id:
+    description: 'Resolved Maven snapshot server ID, or empty'
+    value: ${{ steps.resolve.outputs.snapshot_server_id }}
+  release_server_id:
+    description: 'Resolved Maven release server ID, or empty'
+    value: ${{ steps.resolve.outputs.release_server_id }}
+  project_version:
+    description: 'POM project version (always inferred, never overridden)'
+    value: ${{ steps.infer.outputs.project_version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Infer parameters from pom.xml
+      id: infer
+      shell: bash
+      run: python3 "${{ github.action_path }}/../../scripts/infer_backend_params.py"
+
+    - name: Resolve parameters (explicit > inferred)
+      id: resolve
+      shell: bash
+      env:
+        INPUT_JAVA_VERSIONS: ${{ inputs.java_versions }}
+        INPUT_MAIN_JAVA_VERSION: ${{ inputs.main_java_version }}
+        INPUT_SNAPSHOT_SERVER_ID: ${{ inputs.snapshot_server_id }}
+        INPUT_RELEASE_SERVER_ID: ${{ inputs.release_server_id }}
+        INFERRED_JAVA_VERSIONS: ${{ steps.infer.outputs.java_versions }}
+        INFERRED_MAIN_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
+        INFERRED_SNAPSHOT_SERVER_ID: ${{ steps.infer.outputs.snapshot_server_id }}
+        INFERRED_RELEASE_SERVER_ID: ${{ steps.infer.outputs.release_server_id }}
+      run: |
+        # Java versions: normalize to JSON array
+        JAVA_VERSIONS="${INPUT_JAVA_VERSIONS:-$INFERRED_JAVA_VERSIONS}"
+        if [ -n "$JAVA_VERSIONS" ]; then
+          if echo "$JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
+          else
+            echo "java_versions=[$JAVA_VERSIONS]" >> "$GITHUB_OUTPUT"
+          fi
+        fi
+
+        MAIN="${INPUT_MAIN_JAVA_VERSION:-$INFERRED_MAIN_JAVA_VERSION}"
+        [ -n "$MAIN" ] && echo "main_java_version=$MAIN" >> "$GITHUB_OUTPUT"
+
+        SNAP="${INPUT_SNAPSHOT_SERVER_ID:-$INFERRED_SNAPSHOT_SERVER_ID}"
+        [ -n "$SNAP" ] && echo "snapshot_server_id=$SNAP" >> "$GITHUB_OUTPUT"
+
+        REL="${INPUT_RELEASE_SERVER_ID:-$INFERRED_RELEASE_SERVER_ID}"
+        [ -n "$REL" ] && echo "release_server_id=$REL" >> "$GITHUB_OUTPUT"
