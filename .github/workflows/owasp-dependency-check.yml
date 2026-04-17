@@ -72,31 +72,11 @@ jobs:
           echo "Could not detect project type. Expected pom.xml or package.json at repo root."
           exit 1
 
-      - name: Resolve workflows SHA
-        id: workflows-ref
-        env:
-          WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: |
-          # github.workflow_ref is like "owner/repo/.github/workflows/file.yml@ref".
-          # github.workflow_sha points at the caller's commit when this workflow is
-          # reused from another repo, so we resolve the ref ourselves.
-          REF="${WORKFLOW_REF##*@}"
-          if echo "$REF" | grep -qE '^[a-f0-9]{40}$'; then
-            SHA="$REF"
-          else
-            SHA=$(git ls-remote "https://github.com/openmrs/openmrs-contrib-gha-workflows.git" "$REF" "$REF^{}" | tail -n1 | awk '{print $1}')
-            if [ -z "$SHA" ]; then
-              echo "::error::Could not resolve '$REF' in openmrs/openmrs-contrib-gha-workflows"
-              exit 1
-            fi
-          fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
       - name: Checkout inference scripts and resources
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ steps.workflows-ref.outputs.sha }}
+          ref: ${{ github.job_workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
