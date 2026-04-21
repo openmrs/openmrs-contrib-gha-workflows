@@ -38,12 +38,13 @@ jobs:
           author_login = os.environ.get('PR_AUTHOR_LOGIN', '')
           author_type = os.environ.get('PR_AUTHOR_TYPE', '')
           allowed_types = 'feat|fix|chore|docs|test'
+          summary_start = r'(?:[A-Z]|[a-z][a-zA-Z0-9]*[A-Z][a-zA-Z0-9]*|`[^\s`]+`)'
 
-          ticketed_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z][A-Z0-9]+-\d+: [A-Z].+')
-          ticketless_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z].+')
+          ticketed_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z][A-Z0-9]+-\d+: {summary_start}.+')
+          ticketless_pattern = re.compile(rf'^\(({allowed_types})\) {summary_start}.+')
           ticket_like_pattern = re.compile(rf'^\(({allowed_types})\) [A-Z][A-Z0-9]+-\d+\b')
-          breaking_ticketed_pattern = re.compile(r'^\(BREAKING\) [A-Z][A-Z0-9]+-\d+: [A-Z].+')
-          breaking_ticketless_pattern = re.compile(r'^\(BREAKING\) [A-Z].+')
+          breaking_ticketed_pattern = re.compile(rf'^\(BREAKING\) [A-Z][A-Z0-9]+-\d+: {summary_start}.+')
+          breaking_ticketless_pattern = re.compile(rf'^\(BREAKING\) {summary_start}.+')
           breaking_ticket_like_pattern = re.compile(r'^\(BREAKING\) [A-Z][A-Z0-9]+-\d+\b')
 
           def fail(reason: str) -> None:
@@ -60,11 +61,16 @@ jobs:
               print()
               print('Allowed types: BREAKING, feat, fix, chore, docs, test')
               print()
+              print('The summary may also start with a camelCase identifier (e.g. useEffect)')
+              print('or a balanced `backtick-quoted` code token with no spaces inside.')
+              print()
               print('Passing examples:')
               print('- (fix) O3-4522: Fix run report date format error')
               print('- (feat) O3-2724: Move overlays into the framework')
               print('- (BREAKING) O3-9000: Replace the public orders API contract')
               print('- (docs) Fix README examples')
+              print('- (fix) useEffect dependency array handling')
+              print('- (fix) `openmrsFetch` retries on 5xx responses')
               sys.exit(1)
 
           if author_type == 'Bot' or author_login.endswith('[bot]') or author_login.endswith('-bot'):
