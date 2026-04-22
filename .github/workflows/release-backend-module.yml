@@ -49,6 +49,12 @@ on:
       MAVEN_REPO_API_KEY:
         description: 'Maven repository API key / password'
         required: true
+      GPG_PRIVATE_KEY:
+        description: 'ASCII-armored GPG private key for signing release artifacts. When omitted, artifacts are not signed.'
+        required: false
+      GPG_PASSPHRASE:
+        description: 'Passphrase for the GPG private key'
+        required: false
       BOT_PAT:
         description: 'Personal Access Token for bypassing branch protections'
         required: false
@@ -238,6 +244,12 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
 
+      - name: Import GPG key
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
       - name: Release prepare and perform
         run: |
           export MAVEN_HOME="$(mvn -v 2>/dev/null | grep 'Maven home:' | sed 's/Maven home: //')"
@@ -258,6 +270,7 @@ jobs:
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
           REPO: ${{ github.repository }}
 
   github-release:
