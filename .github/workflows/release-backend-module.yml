@@ -87,9 +87,11 @@ jobs:
             exit 1
           fi
 
-          echo "### Release Parameters 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "- **Release Version:** \`$RELEASE_VERSION\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Next Development Version:** \`$DEVELOPMENT_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "### Release Parameters 🚀"
+            echo "- **Release Version:** \`$RELEASE_VERSION\`"
+            echo "- **Next Development Version:** \`$DEVELOPMENT_VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           echo "Versions validated: release=$RELEASE_VERSION, development=$DEVELOPMENT_VERSION"
         env:
@@ -108,7 +110,7 @@ jobs:
           elif [ "$REF_NAME" = "main" ] || [ "$REF_NAME" = "master" ]; then
             echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           elif echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
-            PREFIX=$(echo "$REF_NAME" | sed 's/\.x$/\./')
+            PREFIX="${REF_NAME%.x}."
             if [[ "$RELEASE_VERSION" == "$PREFIX"* ]]; then
               echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
             else
@@ -133,7 +135,7 @@ jobs:
             exit 1
           fi
 
-          echo "- **Target Branch:** \`$BRANCH\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Branch:** \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
 
           echo "Branch validated: $BRANCH exists in $REPO"
         env:
@@ -256,7 +258,8 @@ jobs:
 
       - name: Release prepare and perform
         run: |
-          export MAVEN_HOME="$(mvn -v 2>/dev/null | grep 'Maven home:' | sed 's/Maven home: //')"
+          MAVEN_HOME="$(mvn -v 2>/dev/null | grep 'Maven home:' | sed 's/Maven home: //')"
+          export MAVEN_HOME
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
           git config --global user.email "$GIT_USER_EMAIL"

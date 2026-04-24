@@ -59,11 +59,11 @@ jobs:
         id: detect
         run: |
           if [ -f "pom.xml" ]; then
-            echo "type=java" >> $GITHUB_OUTPUT
+            echo "type=java" >> "$GITHUB_OUTPUT"
           elif [ -f "package.json" ]; then
-            echo "type=node" >> $GITHUB_OUTPUT
+            echo "type=node" >> "$GITHUB_OUTPUT"
           else
-            echo "type=unknown" >> $GITHUB_OUTPUT
+            echo "type=unknown" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Fail if project type is unknown
@@ -147,7 +147,9 @@ jobs:
         if: steps.detect.outputs.type == 'java'
         env:
           MAVEN_ARGS: ${{ inputs.maven_args }}
-        run: mvn --batch-mode $MAVEN_ARGS
+        run: |
+          # shellcheck disable=SC2086 # MAVEN_ARGS intentionally word-split
+          mvn --batch-mode $MAVEN_ARGS
 
       - name: Run OWASP Dependency-Check
         uses: dependency-check/Dependency-Check_Action@75ba02d6183445fe0761d26e836bde58b1560600 # 1.1.0

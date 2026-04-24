@@ -115,7 +115,7 @@ jobs:
             # Version branches are only added if the POM version matches the branch prefix
             BRANCHES='["main", "master"]'
             if echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
-              PREFIX=$(echo "$REF_NAME" | sed 's/\.x$/\./')
+              PREFIX="${REF_NAME%.x}."
               if [[ "$POM_VERSION" == "$PREFIX"* ]]; then
                 BRANCHES=$(echo "$BRANCHES" | jq -c --arg b "$REF_NAME" '. + [$b]')
               fi
@@ -149,7 +149,9 @@ jobs:
       - name: Build with Maven
         env:
           MAVEN_ARGS: ${{ inputs.maven_args }}
-        run: mvn --batch-mode $MAVEN_ARGS -Dmaven.deploy.skip
+        run: |
+          # shellcheck disable=SC2086 # MAVEN_ARGS intentionally word-split
+          mvn --batch-mode $MAVEN_ARGS -Dmaven.deploy.skip
 
       - name: Check for JaCoCo coverage reports
         id: jacoco
@@ -177,7 +179,7 @@ jobs:
 
       - name: Get OMOD file Name
         id: get_omod_name
-        run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> $GITHUB_OUTPUT
+        run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> "$GITHUB_OUTPUT"
 
       - name: Generate checksums for OMOD
         if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)

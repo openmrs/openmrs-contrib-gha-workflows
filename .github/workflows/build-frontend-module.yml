@@ -86,9 +86,11 @@ jobs:
       - name: 🔧 Configure Turborepo environment
         if: steps.params.outputs.enable_turborepo_cache == 'true'
         run: |
-          echo "TURBO_API=http://127.0.0.1:9080" >> "$GITHUB_ENV"
-          echo "TURBO_TOKEN=turbo-token" >> "$GITHUB_ENV"
-          echo "TURBO_TEAM=${{ github.repository_owner }}" >> "$GITHUB_ENV"
+          {
+            echo "TURBO_API=http://127.0.0.1:9080"
+            echo "TURBO_TOKEN=turbo-token"
+            echo "TURBO_TEAM=${{ github.repository_owner }}"
+          } >> "$GITHUB_ENV"
 
       - name: 🏗️ Run build
         run: ${{ steps.params.outputs.build_command }}
