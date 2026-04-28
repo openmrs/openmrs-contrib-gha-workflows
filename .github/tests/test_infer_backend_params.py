@@ -352,6 +352,15 @@ class TestFindOpenmrsVersion(unittest.TestCase):
             </project>""")
         self.assertIsNone(result)
 
+    def test_platform_version_property_fallback(self):
+        result = self._run("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <openmrsPlatformVersion>2.6.1</openmrsPlatformVersion>
+              </properties>
+            </project>""")
+        self.assertEqual(result, "2.6.1")
+
     def test_version_range(self):
         result = self._run("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
