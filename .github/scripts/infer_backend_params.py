@@ -143,26 +143,29 @@ def find_openmrs_version(root, props):
     """Find the OpenMRS platform dependency version.
 
     Searches root dependencyManagement, root dependencies, then submodule POMs.
+    Falls back to the openmrsPlatformVersion property, which the OpenMRS
+    contrib maven parent sets for inheriting modules.
     """
     for path in ("dependencyManagement/dependencies", "dependencies"):
         v = find_openmrs_dep_in(root.find(path))
         if v:
             return resolve(v, props)
     modules_el = root.find("modules")
-    if modules_el is None:
-        return None
-    for mod in modules_el.findall("module"):
-        if not mod.text:
-            continue
-        mod_pom = os.path.join(mod.text.strip(), "pom.xml")
-        mod_root = parse_pom(mod_pom)
-        if mod_root is None:
-            continue
-        mod_props = {**props, **get_properties(mod_root)}
-        for p in ("dependencyManagement/dependencies", "dependencies"):
-            v = find_openmrs_dep_in(mod_root.find(p))
-            if v:
-                return resolve(v, mod_props)
+    if modules_el is not None:
+        for mod in modules_el.findall("module"):
+            if not mod.text:
+                continue
+            mod_pom = os.path.join(mod.text.strip(), "pom.xml")
+            mod_root = parse_pom(mod_pom)
+            if mod_root is None:
+                continue
+            mod_props = {**props, **get_properties(mod_root)}
+            for p in ("dependencyManagement/dependencies", "dependencies"):
+                v = find_openmrs_dep_in(mod_root.find(p))
+                if v:
+                    return resolve(v, mod_props)
+    if "openmrsPlatformVersion" in props:
+        return resolve(props["openmrsPlatformVersion"], props)
     return None
 
 
