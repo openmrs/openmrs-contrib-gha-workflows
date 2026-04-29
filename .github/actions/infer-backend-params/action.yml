@@ -41,9 +41,19 @@ outputs:
 runs:
   using: composite
   steps:
-    - name: Infer parameters from pom.xml
+    - name: Generate effective POM
+      id: effective_pom
+      shell: bash
+      run: |
+        POM_PATH="${RUNNER_TEMP}/effective-pom.xml"
+        mvn -B -q help:effective-pom -Doutput="${POM_PATH}"
+        echo "path=${POM_PATH}" >> "$GITHUB_OUTPUT"
+
+    - name: Infer parameters from effective POM
       id: infer
       shell: bash
+      env:
+        EFFECTIVE_POM: ${{ steps.effective_pom.outputs.path }}
       run: python3 "${{ github.action_path }}/../../scripts/infer_backend_params.py"
 
     - name: Resolve parameters (explicit > inferred)
@@ -70,10 +80,16 @@ runs:
         fi
 
         MAIN="${INPUT_MAIN_JAVA_VERSION:-$INFERRED_MAIN_JAVA_VERSION}"
-        [ -n "$MAIN" ] && echo "main_java_version=$MAIN" >> "$GITHUB_OUTPUT"
+        if [ -n "$MAIN" ]; then
+          echo "main_java_version=$MAIN" >> "$GITHUB_OUTPUT"
+        fi
 
         SNAP="${INPUT_SNAPSHOT_SERVER_ID:-$INFERRED_SNAPSHOT_SERVER_ID}"
-        [ -n "$SNAP" ] && echo "snapshot_server_id=$SNAP" >> "$GITHUB_OUTPUT"
+        if [ -n "$SNAP" ]; then
+          echo "snapshot_server_id=$SNAP" >> "$GITHUB_OUTPUT"
+        fi
 
         REL="${INPUT_RELEASE_SERVER_ID:-$INFERRED_RELEASE_SERVER_ID}"
-        [ -n "$REL" ] && echo "release_server_id=$REL" >> "$GITHUB_OUTPUT"
+        if [ -n "$REL" ]; then
+          echo "release_server_id=$REL" >> "$GITHUB_OUTPUT"
+        fi

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Infer backend build parameters from a Maven POM file.
+"""Infer backend build parameters from a Maven effective POM.
 
-Parses pom.xml once and extracts:
+Reads the effective POM produced by `mvn help:effective-pom -Doutput=...`
+(path supplied via the EFFECTIVE_POM environment variable) and extracts:
+
 - Java versions to build against (from OpenMRS platform dependency mapping)
 - Main Java version (from Maven compiler settings)
 - Maven server IDs for release and snapshot deployment
@@ -14,9 +16,10 @@ import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import parse_pom, write_github_outputs
+from utils import strip_ns, write_github_outputs
 
 # Maps OpenMRS platform version ranges to the Java versions they support.
 # Each entry is (lower_inclusive, upper_exclusive_or_None, java_versions).
@@ -35,8 +38,39 @@ OPENMRS_DEPS = {
 
 
 # ---------------------------------------------------------------------------
+# Effective POM loading
+# ---------------------------------------------------------------------------
+
+
+def load_projects(path):
+    """Parse the effective POM at `path` and return its <project> elements.
+
+    `mvn help:effective-pom` emits a single <project> for a non-aggregator
+    build and a <projects> wrapper around multiple <project> elements for
+    multi-module builds. Both shapes are handled.
+    """
+    if not os.path.isfile(path):
+        sys.exit(f"::error::Effective POM not found at {path}")
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as e:
+        sys.exit(f"::error::Failed to parse effective POM at {path}: {e}")
+    strip_ns(root)
+    if root.tag == "projects":
+        projects = list(root.findall("project"))
+    elif root.tag == "project":
+        projects = [root]
+    else:
+        sys.exit(f"::error::Unexpected root element in effective POM: {root.tag}")
+    if not projects:
+        sys.exit("::error::Effective POM contains no <project> elements")
+    return projects
+
+
+# ---------------------------------------------------------------------------
 # Version parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_version(s):
     """Parse '2.6.1' or '2.6.1-SNAPSHOT' into a (major, minor, patch) tuple."""
@@ -57,35 +91,18 @@ def normalize_java(v):
 
 
 # ---------------------------------------------------------------------------
-# POM property resolution
+# Per-project property access
 # ---------------------------------------------------------------------------
 
-def resolve(val, props, depth=0):
-    """Resolve ${property} references from the properties dict."""
-    if not val or depth > 10:
-        return val
-    m = re.match(r"^\$\{(.+)\}$", val.strip())
-    if m:
-        resolved = props.get(m.group(1))
-        return resolve(resolved, props, depth + 1) if resolved else val
-    return val
 
-
-def get_properties(root):
-    """Extract all <properties> and implicit project properties."""
+def get_properties(project):
+    """Return a dict of <properties> entries from a single <project> element."""
     props = {}
-    el = root.find("properties")
+    el = project.find("properties")
     if el is not None:
         for child in el:
             if child.text:
                 props[child.tag] = child.text.strip()
-    ver = root.findtext("version")
-    if ver:
-        props.setdefault("project.version", ver.strip())
-    parent_ver = root.findtext("parent/version")
-    if parent_ver:
-        props.setdefault("project.parent.version", parent_ver.strip())
-        props.setdefault("project.version", parent_ver.strip())
     return props
 
 
@@ -93,7 +110,8 @@ def get_properties(root):
 # Java version inference
 # ---------------------------------------------------------------------------
 
-def find_compiler_version(root, props):
+
+def find_compiler_version(project, props):
     """Find main_java_version from compiler settings (priority order).
 
     Checks: maven.compiler.release property, maven.compiler.target property,
@@ -102,9 +120,9 @@ def find_compiler_version(root, props):
     for key in ("maven.compiler.release", "maven.compiler.target"):
         val = props.get(key)
         if val:
-            return normalize_java(resolve(val, props))
+            return normalize_java(val)
     for path in ("build/pluginManagement/plugins", "build/plugins"):
-        plugins = root.find(path)
+        plugins = project.find(path)
         if plugins is None:
             continue
         for plugin in plugins.findall("plugin"):
@@ -122,7 +140,7 @@ def find_compiler_version(root, props):
                 for tag in ("release", "target"):
                     el = config.find(tag)
                     if el is not None and el.text:
-                        return normalize_java(resolve(el.text.strip(), props))
+                        return normalize_java(el.text.strip())
     return None
 
 
@@ -139,33 +157,32 @@ def find_openmrs_dep_in(deps_elem):
     return None
 
 
-def find_openmrs_version(root, props):
-    """Find the OpenMRS platform dependency version.
+def find_openmrs_version(projects):
+    """Find the OpenMRS platform dependency version across all projects.
 
-    Searches root dependencyManagement, root dependencies, then submodule POMs.
-    Falls back to the openmrsPlatformVersion property, which the OpenMRS
-    contrib maven parent sets for inheriting modules.
+    Search order, since `<dependencies>` is what actually gets compiled
+    against and may explicitly override an inherited dependencyManagement
+    version:
+      1. Each project's `<dependencies>` (actual build deps).
+      2. Each project's `<dependencyManagement>` (constraints; covers
+         aggregator POMs that declare the version centrally and submodules
+         that inherit without re-stating).
+      3. Each project's `openmrsPlatformVersion` property (set by the
+         OpenMRS contrib maven parent for modules that don't declare the
+         dep directly).
     """
-    for path in ("dependencyManagement/dependencies", "dependencies"):
-        v = find_openmrs_dep_in(root.find(path))
+    for project in projects:
+        v = find_openmrs_dep_in(project.find("dependencies"))
         if v:
-            return resolve(v, props)
-    modules_el = root.find("modules")
-    if modules_el is not None:
-        for mod in modules_el.findall("module"):
-            if not mod.text:
-                continue
-            mod_pom = os.path.join(mod.text.strip(), "pom.xml")
-            mod_root = parse_pom(mod_pom)
-            if mod_root is None:
-                continue
-            mod_props = {**props, **get_properties(mod_root)}
-            for p in ("dependencyManagement/dependencies", "dependencies"):
-                v = find_openmrs_dep_in(mod_root.find(p))
-                if v:
-                    return resolve(v, mod_props)
-    if "openmrsPlatformVersion" in props:
-        return resolve(props["openmrsPlatformVersion"], props)
+            return v
+    for project in projects:
+        v = find_openmrs_dep_in(project.find("dependencyManagement/dependencies"))
+        if v:
+            return v
+    for project in projects:
+        v = get_properties(project).get("openmrsPlatformVersion")
+        if v:
+            return v
     return None
 
 
@@ -202,11 +219,12 @@ def map_range_to_java(range_str):
 # Maven server ID inference
 # ---------------------------------------------------------------------------
 
-def find_server_ids(root):
+
+def find_server_ids(project):
     """Extract repository and snapshotRepository server IDs from distributionManagement."""
     release_id = None
     snapshot_id = None
-    dm = root.find("distributionManagement")
+    dm = project.find("distributionManagement")
     if dm is not None:
         repo = dm.find("repository/id")
         if repo is not None and repo.text:
@@ -221,15 +239,13 @@ def find_server_ids(root):
 # POM project version
 # ---------------------------------------------------------------------------
 
-def find_project_version(root):
-    """Extract project version from POM root element.
 
-    Checks <version> first, then falls back to <parent><version>.
-    """
-    ver = root.findtext("version")
+def find_project_version(project):
+    """Extract project version from a <project> element."""
+    ver = project.findtext("version")
     if ver:
         return ver.strip()
-    parent_ver = root.findtext("parent/version")
+    parent_ver = project.findtext("parent/version")
     if parent_ver:
         return parent_ver.strip()
     return None
@@ -239,16 +255,19 @@ def find_project_version(root):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    root = parse_pom()
-    if root is None:
-        return
 
-    props = get_properties(root)
+def main():
+    pom_path = os.environ.get("EFFECTIVE_POM")
+    if not pom_path:
+        sys.exit("::error::EFFECTIVE_POM environment variable is not set")
+
+    projects = load_projects(pom_path)
+    primary = projects[0]
+    props = get_properties(primary)
 
     # Java versions
-    compiler_version = find_compiler_version(root, props)
-    openmrs_ver = find_openmrs_version(root, props)
+    compiler_version = find_compiler_version(primary, props)
+    openmrs_ver = find_openmrs_version(projects)
     java_versions = map_to_java(openmrs_ver) if openmrs_ver else None
 
     if compiler_version and java_versions:
@@ -266,11 +285,9 @@ def main():
     else:
         main_java = None
 
-    # Server IDs
-    release_id, snapshot_id = find_server_ids(root)
-
-    # Project version
-    project_version = find_project_version(root)
+    # Server IDs and project version come from the aggregator (first project).
+    release_id, snapshot_id = find_server_ids(primary)
+    project_version = find_project_version(primary)
 
     write_github_outputs(
         {

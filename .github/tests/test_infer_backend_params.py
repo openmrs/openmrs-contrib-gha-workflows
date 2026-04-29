@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Tests for infer_backend_params.py."""
+"""Tests for infer_backend_params.py.
+
+The script now consumes the output of `mvn help:effective-pom`, so test
+fixtures are <project> elements with all inheritance and properties
+already resolved (no ${...} references, no <modules> walking).
+"""
 
 import os
 import sys
-import tempfile
 import textwrap
 import unittest
 import xml.etree.ElementTree as ET
@@ -11,6 +15,13 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import infer_backend_params as infer
 from utils import strip_ns
+
+
+def parse_project(xml_str):
+    """Parse a <project>...</project> XML string into a stripped element."""
+    root = ET.fromstring(textwrap.dedent(xml_str))
+    strip_ns(root)
+    return root
 
 
 # ---------------------------------------------------------------------------
@@ -55,33 +66,6 @@ class TestNormalizeJava(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Property resolution
-# ---------------------------------------------------------------------------
-
-class TestResolve(unittest.TestCase):
-    def test_simple_property(self):
-        self.assertEqual(infer.resolve("${foo}", {"foo": "2.6.1"}), "2.6.1")
-
-    def test_chained_property(self):
-        props = {"foo": "${bar}", "bar": "2.6.1"}
-        self.assertEqual(infer.resolve("${foo}", props), "2.6.1")
-
-    def test_unresolvable(self):
-        self.assertEqual(infer.resolve("${missing}", {}), "${missing}")
-
-    def test_literal(self):
-        self.assertEqual(infer.resolve("2.6.1", {}), "2.6.1")
-
-    def test_none(self):
-        self.assertIsNone(infer.resolve(None, {}))
-
-    def test_max_depth(self):
-        props = {"a": "${a}"}
-        result = infer.resolve("${a}", props)
-        self.assertEqual(result, "${a}")
-
-
-# ---------------------------------------------------------------------------
 # OpenMRS version → Java mapping
 # ---------------------------------------------------------------------------
 
@@ -99,10 +83,10 @@ class TestMapToJava(unittest.TestCase):
         self.assertEqual(infer.map_to_java("2.6.1"), [8, 11])
 
     def test_2_7_0(self):
-        self.assertEqual(infer.map_to_java("2.7.0"), [8, 11, 17])
+        self.assertEqual(infer.map_to_java("2.7.0"), [8, 11, 17, 21])
 
     def test_2_7_4(self):
-        self.assertEqual(infer.map_to_java("2.7.4"), [8, 11, 17])
+        self.assertEqual(infer.map_to_java("2.7.4"), [8, 11, 17, 21])
 
     def test_2_8_0(self):
         self.assertEqual(infer.map_to_java("2.8.0"), [8, 11, 17, 21])
@@ -125,7 +109,7 @@ class TestMapRangeToJava(unittest.TestCase):
         self.assertEqual(infer.map_range_to_java("[2.4.0, 2.7.0)"), [8, 11])
 
     def test_spanning_two_tiers(self):
-        self.assertEqual(infer.map_range_to_java("[2.6.0, 2.8.0)"), [8, 11, 17])
+        self.assertEqual(infer.map_range_to_java("[2.6.0, 2.8.0)"), [8, 11, 17, 21])
 
     def test_spanning_many_tiers(self):
         self.assertEqual(infer.map_range_to_java("[2.4.0, 3.0.0)"), [8, 11, 17, 21])
@@ -143,33 +127,31 @@ class TestMapRangeToJava(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestFindCompilerVersion(unittest.TestCase):
-    def _parse(self, xml_str):
-        root = ET.fromstring(textwrap.dedent(xml_str))
-        strip_ns(root)
-        props = infer.get_properties(root)
-        return root, props
+    def _project(self, xml_str):
+        proj = parse_project(xml_str)
+        return proj, infer.get_properties(proj)
 
     def test_compiler_release_property(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
                 <maven.compiler.release>11</maven.compiler.release>
                 <maven.compiler.target>8</maven.compiler.target>
               </properties>
             </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "11")
+        self.assertEqual(infer.find_compiler_version(proj, props), "11")
 
     def test_compiler_target_property(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
                 <maven.compiler.target>1.8</maven.compiler.target>
               </properties>
             </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "8")
+        self.assertEqual(infer.find_compiler_version(proj, props), "8")
 
     def test_plugin_config_target(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <build>
                 <pluginManagement>
@@ -184,10 +166,10 @@ class TestFindCompilerVersion(unittest.TestCase):
                 </pluginManagement>
               </build>
             </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "8")
+        self.assertEqual(infer.find_compiler_version(proj, props), "8")
 
     def test_plugin_config_release(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <build>
                 <plugins>
@@ -200,44 +182,25 @@ class TestFindCompilerVersion(unittest.TestCase):
                 </plugins>
               </build>
             </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "17")
-
-    def test_plugin_config_with_property_ref(self):
-        root, props = self._parse("""\
-            <project xmlns="http://maven.apache.org/POM/4.0.0">
-              <properties>
-                <javaVersion>21</javaVersion>
-              </properties>
-              <build>
-                <plugins>
-                  <plugin>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <configuration>
-                      <target>${javaVersion}</target>
-                    </configuration>
-                  </plugin>
-                </plugins>
-              </build>
-            </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "21")
+        self.assertEqual(infer.find_compiler_version(proj, props), "17")
 
     def test_no_compiler_settings(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
                 <someOtherProp>value</someOtherProp>
               </properties>
             </project>""")
-        self.assertIsNone(infer.find_compiler_version(root, props))
+        self.assertIsNone(infer.find_compiler_version(proj, props))
 
     def test_no_namespace(self):
-        root, props = self._parse("""\
+        proj, props = self._project("""\
             <project>
               <properties>
                 <maven.compiler.target>11</maven.compiler.target>
               </properties>
             </project>""")
-        self.assertEqual(infer.find_compiler_version(root, props), "11")
+        self.assertEqual(infer.find_compiler_version(proj, props), "11")
 
 
 # ---------------------------------------------------------------------------
@@ -245,50 +208,27 @@ class TestFindCompilerVersion(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestFindOpenmrsVersion(unittest.TestCase):
-    def _run(self, root_xml, submodules=None):
-        """Parse root XML and optional submodule POMs, return inferred version."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_path = os.path.join(tmpdir, "pom.xml")
-            with open(root_path, "w") as f:
-                f.write(textwrap.dedent(root_xml))
-            if submodules:
-                for name, xml_content in submodules.items():
-                    mod_dir = os.path.join(tmpdir, name)
-                    os.makedirs(mod_dir, exist_ok=True)
-                    with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
-                        f.write(textwrap.dedent(xml_content))
-
-            root = ET.parse(root_path).getroot()
-            strip_ns(root)
-            props = infer.get_properties(root)
-
-            old_cwd = os.getcwd()
-            os.chdir(tmpdir)
-            try:
-                return infer.find_openmrs_version(root, props)
-            finally:
-                os.chdir(old_cwd)
+    def _projects(self, *xml_strs):
+        return [parse_project(s) for s in xml_strs]
 
     def test_dependency_management(self):
-        result = self._run("""\
+        # Effective POM has properties already resolved.
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
-              <properties>
-                <openmrsVersion>2.6.1</openmrsVersion>
-              </properties>
               <dependencyManagement>
                 <dependencies>
                   <dependency>
                     <groupId>org.openmrs.api</groupId>
                     <artifactId>openmrs-api</artifactId>
-                    <version>${openmrsVersion}</version>
+                    <version>2.6.1</version>
                   </dependency>
                 </dependencies>
               </dependencyManagement>
             </project>""")
-        self.assertEqual(result, "2.6.1")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.6.1")
 
     def test_direct_dependency(self):
-        result = self._run("""\
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <dependencies>
                 <dependency>
@@ -298,36 +238,34 @@ class TestFindOpenmrsVersion(unittest.TestCase):
                 </dependency>
               </dependencies>
             </project>""")
-        self.assertEqual(result, "2.8.0")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.8.0")
 
-    def test_submodule_dependency(self):
-        result = self._run(
+    def test_dependency_only_in_submodule(self):
+        # Aggregator declares no OpenMRS dep; submodule does.
+        projects = self._projects(
             """\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
-              <properties>
-                <openmrsPlatformVersion>2.7.4</openmrsPlatformVersion>
-              </properties>
+              <artifactId>aggregator</artifactId>
               <modules>
                 <module>api</module>
               </modules>
             </project>""",
-            submodules={
-                "api": """\
-                    <project xmlns="http://maven.apache.org/POM/4.0.0">
-                      <dependencies>
-                        <dependency>
-                          <groupId>org.openmrs.api</groupId>
-                          <artifactId>openmrs-api</artifactId>
-                          <version>${openmrsPlatformVersion}</version>
-                        </dependency>
-                      </dependencies>
-                    </project>"""
-            },
+            """\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>aggregator-api</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>org.openmrs.api</groupId>
+                  <artifactId>openmrs-api</artifactId>
+                  <version>2.7.4</version>
+                </dependency>
+              </dependencies>
+            </project>""",
         )
-        self.assertEqual(result, "2.7.4")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.7.4")
 
     def test_openmrs_web(self):
-        result = self._run("""\
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <dependencies>
                 <dependency>
@@ -337,10 +275,10 @@ class TestFindOpenmrsVersion(unittest.TestCase):
                 </dependency>
               </dependencies>
             </project>""")
-        self.assertEqual(result, "2.4.0")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.4.0")
 
     def test_no_openmrs_dep(self):
-        result = self._run("""\
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <dependencies>
                 <dependency>
@@ -350,19 +288,97 @@ class TestFindOpenmrsVersion(unittest.TestCase):
                 </dependency>
               </dependencies>
             </project>""")
-        self.assertIsNone(result)
+        self.assertIsNone(infer.find_openmrs_version(projects))
 
     def test_platform_version_property_fallback(self):
-        result = self._run("""\
+        # No OpenMRS dep declared, but the property is set (in practice from
+        # the inherited contrib parent POM).
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
                 <openmrsPlatformVersion>2.6.1</openmrsPlatformVersion>
               </properties>
             </project>""")
-        self.assertEqual(result, "2.6.1")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.6.1")
+
+    def test_dependencies_take_priority_over_dependency_management(self):
+        # When both are present with different versions (a submodule
+        # overriding inherited dependencyManagement), the actual <dependencies>
+        # version wins — that's what the build actually compiles against.
+        projects = self._projects("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <dependencyManagement>
+                <dependencies>
+                  <dependency>
+                    <groupId>org.openmrs.api</groupId>
+                    <artifactId>openmrs-api</artifactId>
+                    <version>2.8.0</version>
+                  </dependency>
+                </dependencies>
+              </dependencyManagement>
+              <dependencies>
+                <dependency>
+                  <groupId>org.openmrs.api</groupId>
+                  <artifactId>openmrs-api</artifactId>
+                  <version>2.6.1</version>
+                </dependency>
+              </dependencies>
+            </project>""")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.6.1")
+
+    def test_submodule_dependency_beats_aggregator_dependency_management(self):
+        # Multi-project: aggregator declares 2.8.0 in dependencyManagement,
+        # but a submodule actually depends on 2.7.4. The submodule's actual
+        # version should win.
+        projects = self._projects(
+            """\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>aggregator</artifactId>
+              <dependencyManagement>
+                <dependencies>
+                  <dependency>
+                    <groupId>org.openmrs.api</groupId>
+                    <artifactId>openmrs-api</artifactId>
+                    <version>2.8.0</version>
+                  </dependency>
+                </dependencies>
+              </dependencyManagement>
+            </project>""",
+            """\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>aggregator-api</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>org.openmrs.api</groupId>
+                  <artifactId>openmrs-api</artifactId>
+                  <version>2.7.4</version>
+                </dependency>
+              </dependencies>
+            </project>""",
+        )
+        self.assertEqual(infer.find_openmrs_version(projects), "2.7.4")
+
+    def test_explicit_dep_takes_priority_over_property(self):
+        # If both an OpenMRS dep and the platform property exist, the dep wins.
+        projects = self._projects("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <openmrsPlatformVersion>9.9.9</openmrsPlatformVersion>
+              </properties>
+              <dependencyManagement>
+                <dependencies>
+                  <dependency>
+                    <groupId>org.openmrs.api</groupId>
+                    <artifactId>openmrs-api</artifactId>
+                    <version>2.8.0</version>
+                  </dependency>
+                </dependencies>
+              </dependencyManagement>
+            </project>""")
+        self.assertEqual(infer.find_openmrs_version(projects), "2.8.0")
 
     def test_version_range(self):
-        result = self._run("""\
+        projects = self._projects("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <dependencyManagement>
                 <dependencies>
@@ -374,7 +390,7 @@ class TestFindOpenmrsVersion(unittest.TestCase):
                 </dependencies>
               </dependencyManagement>
             </project>""")
-        self.assertEqual(result, "[2.4.0, 2.7.0)")
+        self.assertEqual(infer.find_openmrs_version(projects), "[2.4.0, 2.7.0)")
 
 
 # ---------------------------------------------------------------------------
@@ -382,13 +398,8 @@ class TestFindOpenmrsVersion(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestFindServerIds(unittest.TestCase):
-    def _parse(self, xml_str):
-        root = ET.fromstring(textwrap.dedent(xml_str))
-        strip_ns(root)
-        return root
-
     def test_both_ids(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <distributionManagement>
                 <repository>
@@ -401,12 +412,12 @@ class TestFindServerIds(unittest.TestCase):
                 </snapshotRepository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertEqual(release_id, "openmrs-repo-modules")
         self.assertEqual(snapshot_id, "openmrs-repo-snapshots")
 
     def test_only_release(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <distributionManagement>
                 <repository>
@@ -414,12 +425,12 @@ class TestFindServerIds(unittest.TestCase):
                 </repository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertEqual(release_id, "my-releases")
         self.assertIsNone(snapshot_id)
 
     def test_only_snapshot(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <distributionManagement>
                 <snapshotRepository>
@@ -427,21 +438,21 @@ class TestFindServerIds(unittest.TestCase):
                 </snapshotRepository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertIsNone(release_id)
         self.assertEqual(snapshot_id, "my-snapshots")
 
     def test_no_distribution_management(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <groupId>org.example</groupId>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertIsNone(release_id)
         self.assertIsNone(snapshot_id)
 
     def test_no_namespace(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project>
               <distributionManagement>
                 <repository>
@@ -452,12 +463,12 @@ class TestFindServerIds(unittest.TestCase):
                 </snapshotRepository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertEqual(release_id, "releases")
         self.assertEqual(snapshot_id, "snapshots")
 
     def test_empty_ids(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <distributionManagement>
                 <repository>
@@ -468,7 +479,7 @@ class TestFindServerIds(unittest.TestCase):
                 </snapshotRepository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(root)
+        release_id, snapshot_id = infer.find_server_ids(proj)
         self.assertIsNone(release_id)
         self.assertIsNone(snapshot_id)
 
@@ -478,64 +489,103 @@ class TestFindServerIds(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestFindProjectVersion(unittest.TestCase):
-    def _parse(self, xml_str):
-        root = ET.fromstring(textwrap.dedent(xml_str))
-        strip_ns(root)
-        return root
-
     def test_direct_version(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <version>1.2.3</version>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "1.2.3")
+        self.assertEqual(infer.find_project_version(proj), "1.2.3")
 
     def test_snapshot_version(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <version>2.0.0-SNAPSHOT</version>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "2.0.0-SNAPSHOT")
+        self.assertEqual(infer.find_project_version(proj), "2.0.0-SNAPSHOT")
 
     def test_parent_version_fallback(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <parent>
                 <version>3.1.0</version>
               </parent>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "3.1.0")
+        self.assertEqual(infer.find_project_version(proj), "3.1.0")
 
     def test_direct_version_takes_precedence(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <version>1.0.0</version>
               <parent>
                 <version>2.0.0</version>
               </parent>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "1.0.0")
+        self.assertEqual(infer.find_project_version(proj), "1.0.0")
 
     def test_no_version(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <groupId>org.example</groupId>
             </project>""")
-        self.assertIsNone(infer.find_project_version(root))
+        self.assertIsNone(infer.find_project_version(proj))
 
     def test_whitespace_stripped(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <version>  1.0.0  </version>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "1.0.0")
+        self.assertEqual(infer.find_project_version(proj), "1.0.0")
 
     def test_no_namespace(self):
-        root = self._parse("""\
+        proj = parse_project("""\
             <project>
               <version>4.5.6</version>
             </project>""")
-        self.assertEqual(infer.find_project_version(root), "4.5.6")
+        self.assertEqual(infer.find_project_version(proj), "4.5.6")
+
+
+# ---------------------------------------------------------------------------
+# Effective POM loading
+# ---------------------------------------------------------------------------
+
+class TestLoadProjects(unittest.TestCase):
+    def _write(self, tmpdir, xml):
+        path = os.path.join(tmpdir, "effective-pom.xml")
+        with open(path, "w") as f:
+            f.write(textwrap.dedent(xml))
+        return path
+
+    def test_single_project_root(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, """\
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <artifactId>only</artifactId>
+                </project>""")
+            projects = infer.load_projects(path)
+            self.assertEqual(len(projects), 1)
+            self.assertEqual(projects[0].findtext("artifactId"), "only")
+
+    def test_multi_project_wrapper(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, """\
+                <projects>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0">
+                    <artifactId>root</artifactId>
+                  </project>
+                  <project xmlns="http://maven.apache.org/POM/4.0.0">
+                    <artifactId>api</artifactId>
+                  </project>
+                </projects>""")
+            projects = infer.load_projects(path)
+            self.assertEqual(len(projects), 2)
+            self.assertEqual(projects[0].findtext("artifactId"), "root")
+            self.assertEqual(projects[1].findtext("artifactId"), "api")
+
+    def test_missing_file_exits(self):
+        with self.assertRaises(SystemExit):
+            infer.load_projects("/tmp/nonexistent-effective-pom-xyz.xml")
 
 
 # ---------------------------------------------------------------------------
@@ -543,49 +593,31 @@ class TestFindProjectVersion(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestEndToEnd(unittest.TestCase):
-    """Integration tests that run the full inference pipeline."""
+    """Integration tests that run the inference pipeline against effective POMs."""
 
-    def _run_inference(self, root_xml, submodules=None):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_path = os.path.join(tmpdir, "pom.xml")
-            with open(root_path, "w") as f:
-                f.write(textwrap.dedent(root_xml))
-            if submodules:
-                for name, xml_content in submodules.items():
-                    mod_dir = os.path.join(tmpdir, name)
-                    os.makedirs(mod_dir, exist_ok=True)
-                    with open(os.path.join(mod_dir, "pom.xml"), "w") as f:
-                        f.write(textwrap.dedent(xml_content))
+    def _run_inference(self, *project_xmls):
+        projects = [parse_project(s) for s in project_xmls]
+        primary = projects[0]
+        props = infer.get_properties(primary)
+        compiler_version = infer.find_compiler_version(primary, props)
+        openmrs_ver = infer.find_openmrs_version(projects)
+        java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
 
-            root = ET.parse(root_path).getroot()
-            strip_ns(root)
-            props = infer.get_properties(root)
-            compiler_version = infer.find_compiler_version(root, props)
+        if compiler_version and java_versions:
+            compiler_int = int(compiler_version)
+            java_versions = [v for v in java_versions if v >= compiler_int]
+            if compiler_int not in java_versions:
+                java_versions.append(compiler_int)
+                java_versions.sort()
 
-            old_cwd = os.getcwd()
-            os.chdir(tmpdir)
-            try:
-                openmrs_ver = infer.find_openmrs_version(root, props)
-            finally:
-                os.chdir(old_cwd)
+        if java_versions:
+            main_java = str(min(java_versions))
+        elif compiler_version:
+            main_java = compiler_version
+        else:
+            main_java = None
 
-            java_versions = infer.map_to_java(openmrs_ver) if openmrs_ver else None
-
-            if compiler_version and java_versions:
-                compiler_int = int(compiler_version)
-                java_versions = [v for v in java_versions if v >= compiler_int]
-                if compiler_int not in java_versions:
-                    java_versions.append(compiler_int)
-                    java_versions.sort()
-
-            if java_versions:
-                main_java = str(min(java_versions))
-            elif compiler_version:
-                main_java = compiler_version
-            else:
-                main_java = None
-
-            return main_java, java_versions
+        return main_java, java_versions
 
     def test_typical_module_target_1_8_openmrs_2_6(self):
         main, versions = self._run_inference("""\
@@ -599,7 +631,7 @@ class TestEndToEnd(unittest.TestCase):
                   <dependency>
                     <groupId>org.openmrs.api</groupId>
                     <artifactId>openmrs-api</artifactId>
-                    <version>${openmrsPlatformVersion}</version>
+                    <version>2.6.1</version>
                   </dependency>
                 </dependencies>
               </dependencyManagement>
@@ -662,7 +694,7 @@ class TestEndToEnd(unittest.TestCase):
               </dependencies>
             </project>""")
         self.assertEqual(main, "11")
-        self.assertEqual(versions, [11, 17])
+        self.assertEqual(versions, [11, 17, 21])
 
     def test_main_java_added_to_versions_if_missing(self):
         main, versions = self._run_inference("""\
@@ -704,35 +736,33 @@ class TestEndToEnd(unittest.TestCase):
               </dependencyManagement>
             </project>""")
         self.assertEqual(main, "8")
-        self.assertEqual(versions, [8, 11, 17])
+        self.assertEqual(versions, [8, 11, 17, 21])
 
-    def test_submodule_with_parent_properties(self):
+    def test_dep_in_submodule_only(self):
+        # Multi-module: aggregator has no OpenMRS dep, submodule does.
+        # Compiler settings come from the aggregator.
         main, versions = self._run_inference(
             """\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <properties>
                 <maven.compiler.target>8</maven.compiler.target>
-                <openmrsPlatformVersion>2.7.4</openmrsPlatformVersion>
               </properties>
-              <modules>
-                <module>api</module>
-              </modules>
+              <artifactId>aggregator</artifactId>
             </project>""",
-            submodules={
-                "api": """\
-                    <project xmlns="http://maven.apache.org/POM/4.0.0">
-                      <dependencies>
-                        <dependency>
-                          <groupId>org.openmrs.api</groupId>
-                          <artifactId>openmrs-api</artifactId>
-                          <version>${openmrsPlatformVersion}</version>
-                        </dependency>
-                      </dependencies>
-                    </project>"""
-            },
+            """\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>aggregator-api</artifactId>
+              <dependencies>
+                <dependency>
+                  <groupId>org.openmrs.api</groupId>
+                  <artifactId>openmrs-api</artifactId>
+                  <version>2.7.4</version>
+                </dependency>
+              </dependencies>
+            </project>""",
         )
         self.assertEqual(main, "8")
-        self.assertEqual(versions, [8, 11, 17])
+        self.assertEqual(versions, [8, 11, 17, 21])
 
     def test_no_openmrs_dep_falls_back_to_compiler(self):
         """Without OpenMRS dep, compiler target is used as fallback."""
