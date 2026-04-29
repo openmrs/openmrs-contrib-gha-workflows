@@ -202,6 +202,50 @@ class TestFindCompilerVersion(unittest.TestCase):
             </project>""")
         self.assertEqual(infer.find_compiler_version(proj, props), "11")
 
+    def test_unresolved_property_in_property_ignored(self):
+        proj, props = self._project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <maven.compiler.target>${javaVersion}</maven.compiler.target>
+              </properties>
+            </project>""")
+        self.assertIsNone(infer.find_compiler_version(proj, props))
+
+    def test_unresolved_property_in_plugin_target_ignored(self):
+        proj, props = self._project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                      <target>${javaVersion}</target>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertIsNone(infer.find_compiler_version(proj, props))
+
+    def test_unresolved_property_skipped_for_resolved_fallback(self):
+        proj, props = self._project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <maven.compiler.target>${javaVersion}</maven.compiler.target>
+              </properties>
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                      <target>17</target>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertEqual(infer.find_compiler_version(proj, props), "17")
+
 
 # ---------------------------------------------------------------------------
 # OpenMRS version detection
@@ -605,10 +649,8 @@ class TestEndToEnd(unittest.TestCase):
 
         if compiler_version and java_versions:
             compiler_int = int(compiler_version)
-            java_versions = [v for v in java_versions if v >= compiler_int]
-            if compiler_int not in java_versions:
-                java_versions.append(compiler_int)
-                java_versions.sort()
+            filtered = [v for v in java_versions if v >= compiler_int]
+            java_versions = filtered if filtered else [compiler_int]
 
         if java_versions:
             main_java = str(min(java_versions))
@@ -639,7 +681,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(main, "8")
         self.assertEqual(versions, [8, 11])
 
-    def test_openmrs_3_x_target_21(self):
+    def test_compiler_below_3_x_floor_clamped(self):
         main, versions = self._run_inference("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <dependencyManagement>
@@ -660,8 +702,8 @@ class TestEndToEnd(unittest.TestCase):
                 </plugins>
               </build>
             </project>""")
-        self.assertEqual(main, "21")
-        self.assertEqual(versions, [21, 25])
+        self.assertEqual(main, "25")
+        self.assertEqual(versions, [25])
 
     def test_no_compiler_settings_falls_back_to_min(self):
         main, versions = self._run_inference("""\
@@ -696,7 +738,7 @@ class TestEndToEnd(unittest.TestCase):
         self.assertEqual(main, "11")
         self.assertEqual(versions, [11, 17, 21])
 
-    def test_main_java_added_to_versions_if_missing(self):
+    def test_compiler_above_matrix_replaces_matrix(self):
         main, versions = self._run_inference("""\
             <project xmlns="http://maven.apache.org/POM/4.0.0">
               <build>
@@ -711,13 +753,53 @@ class TestEndToEnd(unittest.TestCase):
                 <dependency>
                   <groupId>org.openmrs.api</groupId>
                   <artifactId>openmrs-api</artifactId>
-                  <version>3.0.0</version>
+                  <version>2.4.0</version>
                 </dependency>
               </dependencies>
             </project>""")
         self.assertEqual(main, "21")
-        self.assertIn(21, versions)
-        self.assertIn(25, versions)
+        self.assertEqual(versions, [21])
+
+    def test_compiler_below_matrix_floor_clamped(self):
+        # Real-world case (initializer): compiler target 1.6 with OpenMRS 2.1
+        # matrix [8]. JVM 8+ can run target=1.6 bytecode, and the OpenMRS
+        # platform itself can't run on Java 6, so the matrix wins.
+        main, versions = self._run_inference("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <maven.compiler.target>1.6</maven.compiler.target>
+              </properties>
+              <dependencies>
+                <dependency>
+                  <groupId>org.openmrs.api</groupId>
+                  <artifactId>openmrs-api</artifactId>
+                  <version>2.1.1</version>
+                </dependency>
+              </dependencies>
+            </project>""")
+        self.assertEqual(main, "8")
+        self.assertEqual(versions, [8])
+
+    def test_unresolved_compiler_property_falls_through(self):
+        main, versions = self._run_inference("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <properties>
+                <openmrsPlatformVersion>1.11.6</openmrsPlatformVersion>
+              </properties>
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                      <source>${javaVersion}</source>
+                      <target>${javaVersion}</target>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertIsNone(main)
+        self.assertIsNone(versions)
 
     def test_version_range_union(self):
         main, versions = self._run_inference("""\

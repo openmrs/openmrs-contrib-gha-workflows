@@ -116,10 +116,11 @@ def find_compiler_version(project, props):
 
     Checks: maven.compiler.release property, maven.compiler.target property,
     then <release>/<target> in maven-compiler-plugin configuration.
+    Values containing unresolved ${...} references are skipped.
     """
     for key in ("maven.compiler.release", "maven.compiler.target"):
         val = props.get(key)
-        if val:
+        if val and "${" not in val:
             return normalize_java(val)
     for path in ("build/pluginManagement/plugins", "build/plugins"):
         plugins = project.find(path)
@@ -140,7 +141,9 @@ def find_compiler_version(project, props):
                 for tag in ("release", "target"):
                     el = config.find(tag)
                     if el is not None and el.text:
-                        return normalize_java(el.text.strip())
+                        text = el.text.strip()
+                        if text and "${" not in text:
+                            return normalize_java(text)
     return None
 
 
@@ -273,10 +276,8 @@ def main():
     if compiler_version and java_versions:
         compiler_int = int(compiler_version)
         # Only build against Java versions that can satisfy the compiler requirement
-        java_versions = [v for v in java_versions if v >= compiler_int]
-        if compiler_int not in java_versions:
-            java_versions.append(compiler_int)
-            java_versions.sort()
+        filtered = [v for v in java_versions if v >= compiler_int]
+        java_versions = filtered if filtered else [compiler_int]
 
     if java_versions:
         main_java = str(min(java_versions))
