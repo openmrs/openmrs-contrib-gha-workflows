@@ -24,6 +24,12 @@ on:
         description: 'Anthropic API key for the Claude review'
         required: true
 
+# Cancel an in-flight review when a newer event for the same PR arrives.
+# Sticky-comment updates from a stale run can otherwise overwrite a fresh one.
+concurrency:
+  group: claude-review-${{ github.event.repository.full_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     name: Claude PR Review
@@ -35,14 +41,19 @@ jobs:
       issues: write
 
     steps:
-      - name: 📥 Checkout
+      # Callers are expected to use `pull_request_target`, so checkout defaults
+      # to the base branch. Explicitly check out the PR head SHA so the action
+      # reviews the proposed changes. No subsequent step executes PR-controlled
+      # code (no install, no scripts), so this remains safe under fork PRs.
+      - name: 📥 Checkout PR head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: 🤖 Claude review
         uses: anthropics/claude-code-action@fefa07e9c665b7320f08c3b525980457f22f58aa # v1
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: --model ${{ inputs.model }}
           track_progress: ${{ inputs.track_progress }}
