@@ -173,6 +173,11 @@ jobs:
                 missing=$((missing + 1))
               fi
             done <<< "$COORDINATES"
+
+            if [ "$missing" -gt 0 ]; then
+              echo "::error::$missing coordinate(s) could not be resolved; aborting"
+              exit 1
+            fi
           else
             echo "Mode: auto-discover (group prefix: $GROUP_PREFIX)"
             token=""
@@ -287,8 +292,11 @@ jobs:
 
             filename="$(basename "$url")"
 
-            # Idempotency: skip if signature already exists in the repo
-            if curl -sfI -u "$NEXUS_USER:$NEXUS_PASS" "$url.asc" > /dev/null 2>&1; then
+            # Idempotency: skip only when all three companion files already exist;
+            # if any are missing, fall through to repair the partial state.
+            if curl -sfI -u "$NEXUS_USER:$NEXUS_PASS" "$url.asc"      > /dev/null 2>&1 \
+            && curl -sfI -u "$NEXUS_USER:$NEXUS_PASS" "$url.asc.md5"  > /dev/null 2>&1 \
+            && curl -sfI -u "$NEXUS_USER:$NEXUS_PASS" "$url.asc.sha1" > /dev/null 2>&1; then
               echo "Signature already exists; skipping."
               skipped=$((skipped + 1))
               continue
