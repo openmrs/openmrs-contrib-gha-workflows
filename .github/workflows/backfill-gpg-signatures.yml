@@ -1,0 +1,370 @@
+name: Backfill GPG Signatures
+
+on:
+  workflow_dispatch:
+    inputs:
+      coordinates:
+        description: 'Optional newline-separated GAVs (groupId:artifactId:version). When empty, auto-discovers everything under group_prefix.'
+        type: string
+        required: false
+      group_prefix:
+        description: 'Group prefix to discover when coordinates is empty (e.g. org.openmrs).'
+        type: string
+        default: 'org.openmrs'
+      nexus_url:
+        description: 'Base Nexus URL (trailing slash optional)'
+        type: string
+        default: 'https://mavenrepo.openmrs.org'
+      repository:
+        description: 'Nexus repository name'
+        type: string
+        default: 'modules'
+      max_pages:
+        description: 'Safety cap on pagination during auto-discovery (50 components per page). 0 = unlimited.'
+        type: string
+        default: '200'
+      dry_run:
+        description: 'Dry run: resolve, download and sign locally without uploading'
+        type: boolean
+        default: true
+
+jobs:
+  backfill:
+    name: Sign and upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: backfill-gpg-signatures
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Validate inputs
+        env:
+          COORDINATES: ${{ inputs.coordinates }}
+          GROUP_PREFIX: ${{ inputs.group_prefix }}
+          NEXUS_URL: ${{ inputs.nexus_url }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+        run: |
+          set -euo pipefail
+
+          case "$NEXUS_URL" in
+            https://*) ;;
+            *)
+              echo "::error::nexus_url must start with https://: $NEXUS_URL"
+              exit 1
+              ;;
+          esac
+
+          if ! echo "$MAX_PAGES" | grep -qE '^[0-9]+$'; then
+            echo "::error::max_pages must be a non-negative integer: $MAX_PAGES"
+            exit 1
+          fi
+
+          coords_trimmed="$(echo "$COORDINATES" | tr -d '[:space:]')"
+          prefix_trimmed="$(echo "$GROUP_PREFIX" | tr -d '[:space:]')"
+
+          if [ -z "$coords_trimmed" ] && [ -z "$prefix_trimmed" ]; then
+            echo "::error::Provide either coordinates or group_prefix"
+            exit 1
+          fi
+
+          if [ -n "$coords_trimmed" ]; then
+            while IFS= read -r line; do
+              line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+              if ! echo "$line" | grep -qE '^[^:[:space:]]+:[^:[:space:]]+:[^:[:space:]]+$'; then
+                echo "::error::Invalid coordinate (expected groupId:artifactId:version): $line"
+                exit 1
+              fi
+            done <<< "$COORDINATES"
+          fi
+
+      - name: Resolve assets
+        env:
+          COORDINATES: ${{ inputs.coordinates }}
+          GROUP_PREFIX: ${{ inputs.group_prefix }}
+          NEXUS_URL: ${{ inputs.nexus_url }}
+          REPOSITORY: ${{ inputs.repository }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+          NEXUS_USER: ${{ secrets.MAVEN_REPO_USERNAME }}
+          NEXUS_PASS: ${{ secrets.MAVEN_REPO_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          NEXUS_URL="${NEXUS_URL%/}"
+
+          urls_file="$RUNNER_TEMP/backfill-urls.txt"
+          : > "$urls_file"
+
+          # Retries Nexus GETs to ride out transient 5xx / network blips.
+          # Args after function name are passed to curl directly.
+          http_get_retry() {
+            local max=3 attempt=1 backoff=2
+            while [ "$attempt" -le "$max" ]; do
+              if curl -fsSL -u "$NEXUS_USER:$NEXUS_PASS" "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -lt "$max" ]; then
+                echo "::warning::Nexus call failed (attempt $attempt/$max); retrying in ${backoff}s..." >&2
+                sleep "$backoff"
+                backoff=$((backoff * 2))
+              fi
+              attempt=$((attempt + 1))
+            done
+            return 1
+          }
+
+          extract_urls() {
+            jq -r '.items[] | select(.downloadUrl != null) | .downloadUrl' \
+              | grep -vE '\.(asc|md5|sha1|sha256|sha512)$' || true
+          }
+
+          coords_trimmed="$(echo "$COORDINATES" | tr -d '[:space:]')"
+
+          if [ -n "$coords_trimmed" ]; then
+            echo "Mode: explicit coordinates"
+            missing=0
+            while IFS= read -r line; do
+              line="$(echo "$line" | xargs)"
+              [ -z "$line" ] && continue
+
+              group="${line%%:*}"
+              rest="${line#*:}"
+              artifact="${rest%%:*}"
+              version="${rest#*:}"
+
+              echo "Resolving $group:$artifact:$version ..."
+
+              token=""
+              found_for_coord=0
+              page_for_coord=0
+              while :; do
+                page_for_coord=$((page_for_coord + 1))
+                args=(
+                  --get
+                  --data-urlencode "repository=$REPOSITORY"
+                  --data-urlencode "group=$group"
+                  --data-urlencode "name=$artifact"
+                  --data-urlencode "version=$version"
+                )
+                if [ -n "$token" ]; then
+                  args+=(--data-urlencode "continuationToken=$token")
+                fi
+
+                if ! response=$(http_get_retry "${args[@]}" "$NEXUS_URL/service/rest/v1/search/assets"); then
+                  echo "::error::Nexus search API failed for $line (page $page_for_coord, after retries)"
+                  break
+                fi
+
+                page_urls=$(echo "$response" | extract_urls)
+                if [ -n "$page_urls" ]; then
+                  echo "$page_urls" >> "$urls_file"
+                  found_for_coord=$((found_for_coord + $(echo "$page_urls" | wc -l)))
+                fi
+
+                token=$(echo "$response" | jq -r '.continuationToken // empty')
+                [ -z "$token" ] && break
+              done
+
+              if [ "$found_for_coord" = "0" ]; then
+                echo "::warning::No assets found for $line"
+                missing=$((missing + 1))
+              fi
+            done <<< "$COORDINATES"
+          else
+            echo "Mode: auto-discover (group prefix: $GROUP_PREFIX)"
+            token=""
+            page=0
+            components_seen=0
+            components_matched=0
+
+            while :; do
+              page=$((page + 1))
+              args=(
+                --get
+                --data-urlencode "repository=$REPOSITORY"
+              )
+              if [ -n "$token" ]; then
+                args+=(--data-urlencode "continuationToken=$token")
+              fi
+
+              if ! response=$(http_get_retry "${args[@]}" "$NEXUS_URL/service/rest/v1/components"); then
+                echo "::error::Nexus components API failed (page $page, after retries); aborting discovery"
+                exit 1
+              fi
+
+              page_count=$(echo "$response" | jq '.items | length')
+              components_seen=$((components_seen + page_count))
+
+              matched_on_page=$(echo "$response" | jq -r --arg p "$GROUP_PREFIX" \
+                '[.items[] | select(.group != null and (.group | startswith($p)))] | length')
+              components_matched=$((components_matched + matched_on_page))
+
+              echo "$response" | jq -r --arg p "$GROUP_PREFIX" '
+                .items[]
+                | select(.group != null and (.group | startswith($p)))
+                | .assets[]
+                | select(.downloadUrl != null)
+                | .downloadUrl
+              ' | grep -vE '\.(asc|md5|sha1|sha256|sha512)$' \
+                >> "$urls_file" || true
+
+              echo "Page $page: scanned=$page_count matched=$matched_on_page (running total: scanned=$components_seen matched=$components_matched)"
+
+              token=$(echo "$response" | jq -r '.continuationToken // empty')
+              if [ -z "$token" ]; then
+                break
+              fi
+
+              if [ "$MAX_PAGES" -gt 0 ] && [ "$page" -ge "$MAX_PAGES" ]; then
+                echo "::warning::Reached max_pages=$MAX_PAGES; stopping discovery early."
+                break
+              fi
+            done
+
+            echo ""
+            echo "Discovery summary: $components_matched components matched out of $components_seen scanned."
+          fi
+
+          # Dedupe while preserving first-occurrence order
+          awk '!seen[$0]++' "$urls_file" > "$urls_file.tmp" && mv "$urls_file.tmp" "$urls_file"
+
+          total=$(wc -l < "$urls_file" | tr -d ' ')
+          echo ""
+          echo "Resolved $total signable URLs (deduped)."
+          if [ "$total" -le 100 ]; then
+            cat "$urls_file"
+          else
+            echo "(showing first 50)"
+            head -n 50 "$urls_file"
+          fi
+
+          if [ "$total" = "0" ]; then
+            echo "::error::No assets resolved"
+            exit 1
+          fi
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY secret is not set on this repository; cannot backfill"
+            exit 1
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Sign and upload
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          NEXUS_USER: ${{ secrets.MAVEN_REPO_USERNAME }}
+          NEXUS_PASS: ${{ secrets.MAVEN_REPO_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GPG_PASSPHRASE:-}" ]; then
+            echo "::error::GPG_PASSPHRASE secret is not set on this repository; cannot backfill"
+            exit 1
+          fi
+
+          urls_file="$RUNNER_TEMP/backfill-urls.txt"
+
+          processed=0
+          skipped=0
+          failed=0
+
+          while IFS= read -r url; do
+            url="$(echo "$url" | xargs)"
+            [ -z "$url" ] && continue
+
+            echo ""
+            echo "=== $url ==="
+
+            filename="$(basename "$url")"
+
+            # Idempotency: skip if signature already exists in the repo
+            if curl -sfI -u "$NEXUS_USER:$NEXUS_PASS" "$url.asc" > /dev/null 2>&1; then
+              echo "Signature already exists; skipping."
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            # Per-URL workdir avoids basename collisions across different paths
+            iterdir="$(mktemp -d)"
+            filepath="$iterdir/$filename"
+
+            if ! curl -fsSL -u "$NEXUS_USER:$NEXUS_PASS" -o "$filepath" "$url"; then
+              echo "::error::Failed to download $url"
+              failed=$((failed + 1))
+              rm -rf "$iterdir"
+              continue
+            fi
+
+            if ! gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+                   --detach-sign --armor "$filepath" <<< "$GPG_PASSPHRASE"; then
+              echo "::error::Signing failed for $filename"
+              failed=$((failed + 1))
+              rm -rf "$iterdir"
+              continue
+            fi
+
+            md5sum  "$filepath.asc" | awk '{print $1}' > "$filepath.asc.md5"
+            sha1sum "$filepath.asc" | awk '{print $1}' > "$filepath.asc.sha1"
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "[dry-run] would PUT $url.asc (+ .md5, .sha1)"
+              processed=$((processed + 1))
+              rm -rf "$iterdir"
+              continue
+            fi
+
+            upload_failed=0
+            for ext in asc asc.md5 asc.sha1; do
+              if ! curl -fsSL -o /dev/null -u "$NEXUS_USER:$NEXUS_PASS" -T "$filepath.$ext" "$url.$ext"; then
+                echo "::error::Failed to upload $filename.$ext"
+                upload_failed=1
+              fi
+            done
+
+            if [ "$upload_failed" = "0" ]; then
+              processed=$((processed + 1))
+            else
+              failed=$((failed + 1))
+            fi
+
+            rm -rf "$iterdir"
+          done < "$urls_file"
+
+          echo ""
+          echo "Summary: processed=$processed skipped=$skipped failed=$failed"
+          [ "$failed" = "0" ]
+
+      - name: Verify a sample signature
+        if: ${{ !inputs.dry_run }}
+        env:
+          NEXUS_USER: ${{ secrets.MAVEN_REPO_USERNAME }}
+          NEXUS_PASS: ${{ secrets.MAVEN_REPO_API_KEY }}
+        run: |
+          set -euo pipefail
+          urls_file="$RUNNER_TEMP/backfill-urls.txt"
+          first_url="$(head -n1 "$urls_file" | xargs)"
+          if [ -z "$first_url" ]; then
+            echo "No URL to verify"
+            exit 0
+          fi
+
+          tmpdir=$(mktemp -d)
+          curl -fsSL -u "$NEXUS_USER:$NEXUS_PASS" -o "$tmpdir/artifact"     "$first_url"
+          curl -fsSL -u "$NEXUS_USER:$NEXUS_PASS" -o "$tmpdir/artifact.asc" "$first_url.asc"
+
+          if gpg --verify "$tmpdir/artifact.asc" "$tmpdir/artifact"; then
+            echo "Verification succeeded for $first_url"
+          else
+            echo "::error::Verification FAILED for $first_url"
+            exit 1
+          fi
