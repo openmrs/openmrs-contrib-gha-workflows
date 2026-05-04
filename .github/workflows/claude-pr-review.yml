@@ -1,0 +1,64 @@
+name: Claude PR Review
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: 'Anthropic model ID (e.g. claude-sonnet-4-6, claude-opus-4-7)'
+        type: string
+        default: 'claude-sonnet-4-6'
+      extra_instructions:
+        description: 'Repository-specific guidance appended to the base review prompt'
+        type: string
+        default: ''
+      use_sticky_comment:
+        description: 'Update one summary comment per PR instead of posting a new one each run'
+        type: string
+        default: 'true'
+      track_progress:
+        description: 'Show live progress while Claude is reviewing'
+        type: string
+        default: 'true'
+    secrets:
+      ANTHROPIC_API_KEY:
+        description: 'Anthropic API key for the Claude review'
+        required: true
+
+jobs:
+  review:
+    name: Claude PR Review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: 🤖 Claude review
+        uses: anthropics/claude-code-action@fefa07e9c665b7320f08c3b525980457f22f58aa # v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: --model ${{ inputs.model }}
+          track_progress: ${{ inputs.track_progress }}
+          use_sticky_comment: ${{ inputs.use_sticky_comment }}
+          prompt: |
+            You are reviewing a pull request for an OpenMRS repository. OpenMRS is an
+            open-source medical records platform with many first-time and student
+            contributors — be encouraging, explain *why* a change matters rather than
+            just *what* to change, and prefer concrete code suggestions over abstract
+            principles. Skip nits that linters/formatters already enforce.
+
+            Focus on semantic issues: correctness, security, data integrity, public-API
+            stability, test quality, and breaking changes for downstream consumers.
+
+            Ignore changes under: build outputs (target/, dist/, build/, node_modules/),
+            generated translation files (messages_*.properties, *.po), and lockfiles
+            unless a dependency change looks suspicious.
+
+            ${{ inputs.extra_instructions }}
