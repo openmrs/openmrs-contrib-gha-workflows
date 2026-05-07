@@ -2,9 +2,9 @@
 #
 # Backfill GPG signatures for Maven artifacts in JFrog Artifactory.
 #
-# Lists artifacts under a groupId prefix in a target Artifactory repo via AQL,
-# then for each artifact missing a .asc file: download, detach-sign, and PUT
-# the .asc (+ .asc.md5, .asc.sha1) back to the same path.
+# Lists artifacts under a Maven coordinate prefix in a target Artifactory repo
+# via AQL, then for each artifact missing a .asc file: download, detach-sign,
+# and PUT the .asc (+ .asc.md5, .asc.sha1) back to the same path.
 #
 # Required env:
 #   ARTIFACTORY_USER     Artifactory username
@@ -17,14 +17,14 @@
 #
 # Usage:
 #   scripts/backfill-gpg-signatures.sh --repo modules
-#   scripts/backfill-gpg-signatures.sh --repo modules --group-prefix org.openmrs --apply
+#   scripts/backfill-gpg-signatures.sh --repo modules --maven-prefix org.openmrs.module.xforms --apply
 #
 # Defaults to dry-run. Pass --apply to actually upload signatures.
 
 set -euo pipefail
 
 ARTIFACTORY_URL="${ARTIFACTORY_URL:-https://openmrs.jfrog.io/artifactory}"
-GROUP_PREFIX="org.openmrs"
+MAVEN_PREFIX="org.openmrs"
 REPO=""
 APPLY="false"
 PAGE_SIZE=1000
@@ -43,7 +43,12 @@ Required:
   --repo REPO              Artifactory repo key (e.g. modules, modules-snapshots, public)
 
 Options:
-  --group-prefix PREFIX    Maven groupId prefix (default: org.openmrs)
+  --maven-prefix PREFIX    Maven coordinate prefix; matches anything starting
+                           with this. Default: org.openmrs. Examples:
+                             org.openmrs                       (all artifacts)
+                             org.openmrs.module                (all modules)
+                             org.openmrs.module.xforms         (one module)
+                             org.openmrs.module.xforms.xforms-omod  (one artifactId)
   --artifactory-url URL    Artifactory base URL (default: \$ARTIFACTORY_URL or
                            https://openmrs.jfrog.io/artifactory)
   --apply                  Actually upload signatures (default: dry-run)
@@ -56,7 +61,7 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo)             REPO="$2"; shift 2 ;;
-    --group-prefix)     GROUP_PREFIX="$2"; shift 2 ;;
+    --maven-prefix)     MAVEN_PREFIX="$2"; shift 2 ;;
     --artifactory-url)  ARTIFACTORY_URL="$2"; shift 2 ;;
     --apply)            APPLY="true"; shift ;;
     -h|--help)          usage; exit 0 ;;
@@ -86,7 +91,7 @@ for cmd in jq gpg curl awk; do
   fi
 done
 
-group_path="$(echo "$GROUP_PREFIX" | tr '.' '/')"
+prefix_path="$(echo "$MAVEN_PREFIX" | tr '.' '/')"
 artifactory_host="$(echo "$ARTIFACTORY_URL" | awk -F/ '{print $3}')"
 
 # Throwaway GNUPGHOME so we don't pollute the operator's keyring.
@@ -125,10 +130,14 @@ http_retry() {
   return 1
 }
 
-# HEAD probe that distinguishes "definitely absent" (4xx, no retry) from
-# "unsure" (5xx / network error, retried). Returns 0 if the URL exists.
-# Exhausted retries are treated as "doesn't exist" so the caller proceeds with
-# an upload — Artifactory will arbitrate via its redeploy policy.
+# HEAD probe with three-state result:
+#   0 — URL exists (2xx)
+#   1 — URL definitely absent (404; no retry)
+#   2 — unsure (5xx, network error, or other 4xx after exhausted retries —
+#       e.g. 401/403/405/429 indicate a real problem worth surfacing rather
+#       than papering over as "absent")
+# Callers treat 2 as "defer this artifact" rather than risking a clobbering
+# PUT or a needless re-sign.
 url_exists() {
   local url="$1" attempt=1 max=3 backoff=2 code
   while [ "$attempt" -le "$max" ]; do
@@ -136,8 +145,8 @@ url_exists() {
             --max-time "$TIMEOUT_HEAD" \
             --netrc-file "$NETRC" "$url" 2>/dev/null)" || code="000"
     case "$code" in
-      2*) return 0 ;;
-      4*) return 1 ;;
+      2*)  return 0 ;;
+      404) return 1 ;;
     esac
     if [ "$attempt" -lt "$max" ]; then
       echo "  warn: HEAD $url returned '$code' (attempt $attempt/$max); retry in ${backoff}s" >&2
@@ -146,21 +155,32 @@ url_exists() {
     fi
     attempt=$((attempt + 1))
   done
-  return 1
+  return 2
 }
 
 echo "Importing GPG key into $GNUPGHOME ..."
-gpg --batch --import <<< "$GPG_PRIVATE_KEY"
+# Pipe rather than here-string: bash here-strings can be implemented as a
+# tempfile, leaking the private key onto disk in $TMPDIR.
+if ! printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import; then
+  echo "error: gpg key import failed" >&2
+  exit 1
+fi
+sec_count="$(gpg --list-secret-keys --with-colons 2>/dev/null | grep -c '^sec:' || true)"
+if [ "$sec_count" -lt 1 ]; then
+  echo "error: no secret keys present after import" >&2
+  exit 1
+fi
+echo "Imported $sec_count secret key(s):"
 gpg --list-secret-keys --keyid-format=long
 
 echo ""
-echo "Listing artifacts in repo='$REPO' under path='$group_path/*' via AQL..."
+echo "Listing artifacts in repo='$REPO' under path='$prefix_path/*' via AQL..."
 
 : > "$urls_file"
 offset=0
 total_listed=0
 while :; do
-  query="items.find({\"repo\":\"$REPO\",\"path\":{\"\$match\":\"$group_path/*\"},\"type\":\"file\"}).include(\"repo\",\"path\",\"name\").sort({\"\$asc\":[\"path\",\"name\"]}).offset($offset).limit($PAGE_SIZE)"
+  query="items.find({\"repo\":\"$REPO\",\"path\":{\"\$match\":\"$prefix_path/*\"},\"type\":\"file\"}).include(\"repo\",\"path\",\"name\").sort({\"\$asc\":[\"path\",\"name\"]}).offset($offset).limit($PAGE_SIZE)"
 
   if ! response="$(http_retry curl -fsSL \
         --max-time "$TIMEOUT_AQL" \
@@ -201,7 +221,12 @@ echo "Mode: $mode_label"
 processed=0
 skipped=0
 failed=0
+deferred=0
 last_uploaded=""
+deferred_file="$WORKDIR/deferred.txt"
+failed_file="$WORKDIR/failed.txt"
+: > "$deferred_file"
+: > "$failed_file"
 
 while IFS= read -r relpath; do
   [ -z "$relpath" ] && continue
@@ -210,12 +235,19 @@ while IFS= read -r relpath; do
   echo ""
   echo "=== $relpath ==="
 
-  asc_exists=0; md5_exists=0; sha1_exists=0
-  url_exists "$url.asc"      && asc_exists=1
-  url_exists "$url.asc.md5"  && md5_exists=1
-  url_exists "$url.asc.sha1" && sha1_exists=1
+  asc_state=0; md5_state=0; sha1_state=0
+  url_exists "$url.asc"      || asc_state=$?
+  url_exists "$url.asc.md5"  || md5_state=$?
+  url_exists "$url.asc.sha1" || sha1_state=$?
 
-  if [ "$asc_exists" = 1 ] && [ "$md5_exists" = 1 ] && [ "$sha1_exists" = 1 ]; then
+  if [ "$asc_state" = 2 ] || [ "$md5_state" = 2 ] || [ "$sha1_state" = 2 ]; then
+    echo "warn: HEAD probe unreliable; deferring (rerun to retry)"
+    echo "$relpath" >> "$deferred_file"
+    deferred=$((deferred + 1))
+    continue
+  fi
+
+  if [ "$asc_state" = 0 ] && [ "$md5_state" = 0 ] && [ "$sha1_state" = 0 ]; then
     echo "Signature already present; skipping."
     skipped=$((skipped + 1))
     continue
@@ -226,15 +258,32 @@ while IFS= read -r relpath; do
   filepath="$iterdir/$filename"
   asc_path="$filepath.asc"
 
-  if [ "$asc_exists" = 1 ]; then
-    # Partial state: .asc on the server is canonical. Fetch it and rebuild the
-    # missing companions from it — re-signing would produce a different .asc
-    # (signatures are non-deterministic) and a re-PUT may be blocked by the
-    # repo's redeploy policy.
-    echo "Partial state: .asc exists, fetching it to rebuild missing companions"
+  if [ "$asc_state" = 0 ]; then
+    # Partial state: .asc on the server is canonical. Fetch it (and the
+    # artifact) and verify before reusing — re-signing would produce a
+    # different .asc (signatures are non-deterministic) and a re-PUT may be
+    # blocked by the repo's redeploy policy. Verifying guards against trusting
+    # a corrupted or wrong-key .asc that was uploaded previously.
+    echo "Partial state: .asc exists, fetching .asc + artifact to verify"
     if ! http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
                        --netrc-file "$NETRC" -o "$asc_path" "$url.asc"; then
       echo "error: failed to fetch existing $url.asc" >&2
+      echo "$relpath" >> "$failed_file"
+      failed=$((failed + 1))
+      rm -rf "$iterdir"
+      continue
+    fi
+    if ! http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
+                       --netrc-file "$NETRC" -o "$filepath" "$url"; then
+      echo "error: failed to fetch artifact for verification: $url" >&2
+      echo "$relpath" >> "$failed_file"
+      failed=$((failed + 1))
+      rm -rf "$iterdir"
+      continue
+    fi
+    if ! gpg --batch --verify "$asc_path" "$filepath"; then
+      echo "error: existing .asc on server failed gpg --verify; refusing to reuse: $url.asc" >&2
+      echo "$relpath" >> "$failed_file"
       failed=$((failed + 1))
       rm -rf "$iterdir"
       continue
@@ -243,14 +292,17 @@ while IFS= read -r relpath; do
     if ! http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
                        --netrc-file "$NETRC" -o "$filepath" "$url"; then
       echo "error: download failed: $url" >&2
+      echo "$relpath" >> "$failed_file"
       failed=$((failed + 1))
       rm -rf "$iterdir"
       continue
     fi
 
-    if ! gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
-           --detach-sign --armor "$filepath" <<< "$GPG_PASSPHRASE"; then
+    if ! printf '%s' "$GPG_PASSPHRASE" \
+         | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+               --detach-sign --armor "$filepath"; then
       echo "error: sign failed: $filename" >&2
+      echo "$relpath" >> "$failed_file"
       failed=$((failed + 1))
       rm -rf "$iterdir"
       continue
@@ -262,9 +314,9 @@ while IFS= read -r relpath; do
 
   # Build the list of missing extensions to upload.
   to_upload=()
-  [ "$asc_exists"  = 0 ] && to_upload+=("asc")
-  [ "$md5_exists"  = 0 ] && to_upload+=("asc.md5")
-  [ "$sha1_exists" = 0 ] && to_upload+=("asc.sha1")
+  [ "$asc_state"  != 0 ] && to_upload+=("asc")
+  [ "$md5_state"  != 0 ] && to_upload+=("asc.md5")
+  [ "$sha1_state" != 0 ] && to_upload+=("asc.sha1")
 
   if [ "$APPLY" != "true" ]; then
     for ext in "${to_upload[@]}"; do
@@ -290,6 +342,7 @@ while IFS= read -r relpath; do
     processed=$((processed + 1))
     last_uploaded="$relpath"
   else
+    echo "$relpath" >> "$failed_file"
     failed=$((failed + 1))
   fi
 
@@ -297,7 +350,19 @@ while IFS= read -r relpath; do
 done < "$urls_file"
 
 echo ""
-echo "Summary [$mode_label]: processed=$processed skipped=$skipped failed=$failed"
+echo "Summary [$mode_label]: processed=$processed skipped=$skipped deferred=$deferred failed=$failed"
+
+if [ -s "$deferred_file" ]; then
+  echo ""
+  echo "Deferred (HEAD probe unreliable; rerun to retry):"
+  sed 's/^/  - /' "$deferred_file"
+fi
+
+if [ -s "$failed_file" ]; then
+  echo ""
+  echo "Failed (download/sign/upload error after retries):"
+  sed 's/^/  - /' "$failed_file"
+fi
 
 # Post-upload sanity check: fetch the most recently signed pair back from the
 # server and verify it. Catches "wrong key imported" / "uploads silently
@@ -319,4 +384,4 @@ if [ "$APPLY" = "true" ] && [ -n "$last_uploaded" ]; then
   fi
 fi
 
-[ "$failed" = "0" ]
+[ "$failed" = "0" ] && [ "$deferred" = "0" ]
