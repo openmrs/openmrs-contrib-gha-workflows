@@ -148,10 +148,10 @@ jobs:
 
       - name: Build with Maven
         env:
-          MAVEN_ARGS: ${{ inputs.maven_args }}
+          MVN_GOALS: ${{ inputs.maven_args }}
         run: |
-          # shellcheck disable=SC2086 # MAVEN_ARGS intentionally word-split
-          mvn --batch-mode $MAVEN_ARGS -Dmaven.deploy.skip
+          # shellcheck disable=SC2086 # MVN_GOALS intentionally word-split
+          mvn --batch-mode $MVN_GOALS -Dmaven.deploy.skip
 
       - name: Check for JaCoCo coverage reports
         id: jacoco
