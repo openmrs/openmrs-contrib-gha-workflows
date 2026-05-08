@@ -37,6 +37,15 @@ outputs:
   project_version:
     description: 'POM project version (always inferred, never overridden)'
     value: ${{ steps.infer.outputs.project_version }}
+  project_artifact_id:
+    description: 'POM project artifactId (always inferred, never overridden)'
+    value: ${{ steps.infer.outputs.project_artifact_id }}
+  release_tag_format:
+    description: >
+      maven-release-plugin tagNameFormat from the effective POM, or the
+      plugin default (@{project.artifactId}-@{project.version}) when not
+      configured. Always inferred, never overridden.
+    value: ${{ steps.infer.outputs.release_tag_format }}
 
 runs:
   using: composite

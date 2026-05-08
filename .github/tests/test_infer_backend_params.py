@@ -589,6 +589,142 @@ class TestFindProjectVersion(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# artifactId
+# ---------------------------------------------------------------------------
+
+class TestFindArtifactId(unittest.TestCase):
+    def test_present(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>authentication</artifactId>
+            </project>""")
+        self.assertEqual(infer.find_artifact_id(proj), "authentication")
+
+    def test_missing(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <groupId>org.openmrs.module</groupId>
+            </project>""")
+        self.assertIsNone(infer.find_artifact_id(proj))
+
+    def test_whitespace_stripped(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>  authentication  </artifactId>
+            </project>""")
+        self.assertEqual(infer.find_artifact_id(proj), "authentication")
+
+
+# ---------------------------------------------------------------------------
+# maven-release-plugin tagNameFormat
+# ---------------------------------------------------------------------------
+
+class TestFindReleaseTagFormat(unittest.TestCase):
+    def test_overridden_in_build_plugins(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                      <tagNameFormat>@{project.version}</tagNameFormat>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertEqual(infer.find_release_tag_format(proj), "@{project.version}")
+
+    def test_overridden_in_plugin_management(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <pluginManagement>
+                  <plugins>
+                    <plugin>
+                      <artifactId>maven-release-plugin</artifactId>
+                      <configuration>
+                        <tagNameFormat>v@{project.version}</tagNameFormat>
+                      </configuration>
+                    </plugin>
+                  </plugins>
+                </pluginManagement>
+              </build>
+            </project>""")
+        self.assertEqual(infer.find_release_tag_format(proj), "v@{project.version}")
+
+    def test_build_plugins_takes_priority_over_management(self):
+        # When both are set, the resolved configuration in build/plugins wins;
+        # mirrors how Maven itself merges pluginManagement into plugins.
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <pluginManagement>
+                  <plugins>
+                    <plugin>
+                      <artifactId>maven-release-plugin</artifactId>
+                      <configuration>
+                        <tagNameFormat>mgmt-@{project.version}</tagNameFormat>
+                      </configuration>
+                    </plugin>
+                  </plugins>
+                </pluginManagement>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                      <tagNameFormat>@{project.version}</tagNameFormat>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertEqual(infer.find_release_tag_format(proj), "@{project.version}")
+
+    def test_plugin_present_but_no_tag_format_configured(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                      <autoVersionSubmodules>true</autoVersionSubmodules>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertIsNone(infer.find_release_tag_format(proj))
+
+    def test_no_release_plugin(self):
+        # Authentication-style: nothing in the inheritance chain configures
+        # tagNameFormat. Returning None signals "use the plugin default".
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <artifactId>authentication</artifactId>
+            </project>""")
+        self.assertIsNone(infer.find_release_tag_format(proj))
+
+    def test_empty_tag_format_treated_as_unset(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <configuration>
+                      <tagNameFormat>   </tagNameFormat>
+                    </configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertIsNone(infer.find_release_tag_format(proj))
+
+
+# ---------------------------------------------------------------------------
 # Effective POM loading
 # ---------------------------------------------------------------------------
 

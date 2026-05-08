@@ -69,6 +69,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+    outputs:
+      tag_name: ${{ steps.tag.outputs.name }}
 
     steps:
       - name: Validate version inputs
@@ -197,6 +199,27 @@ jobs:
         run: |
           echo "id=${INFERRED_SNAPSHOT_ID:-openmrs-repo-snapshots}" >> "$GITHUB_OUTPUT"
 
+      - name: Compute release tag name
+        id: tag
+        env:
+          TAG_FORMAT: ${{ steps.infer.outputs.release_tag_format }}
+          ARTIFACT_ID: ${{ steps.infer.outputs.project_artifact_id }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          # Resolve the maven-release-plugin tag name by substituting the
+          # placeholders the plugin supports for the values it would use at
+          # release time (artifactId is stable; version is the release version).
+          TAG_NAME="$TAG_FORMAT"
+          TAG_NAME="${TAG_NAME//@\{project.artifactId\}/$ARTIFACT_ID}"
+          TAG_NAME="${TAG_NAME//@\{project.version\}/$RELEASE_VERSION}"
+          if [[ "$TAG_NAME" == *"@{"* ]]; then
+            echo "::error::Unresolved placeholder in release tag name '$TAG_NAME' (format: '$TAG_FORMAT'). Only @{project.artifactId} and @{project.version} are supported."
+            exit 1
+          fi
+          echo "name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "- **Release Tag:** \`$TAG_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Computed release tag name: $TAG_NAME"
+
       - name: Set up Java ${{ steps.java.outputs.version }}
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
@@ -238,13 +261,13 @@ jobs:
 
       - name: Verify tag does not exist
         run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_VERSION" >/dev/null 2>&1; then
-            echo "::error::Tag $RELEASE_VERSION already exists. Release aborted to prevent overwriting."
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_TAG already exists. Release aborted to prevent overwriting."
             exit 1
           fi
           mvn release:clean -B 2>/dev/null || true
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
 
       - name: Import GPG key
         env:
@@ -293,24 +316,24 @@ jobs:
           MAX_RETRIES=5
           DELAY=15
           for i in $(seq 1 "$MAX_RETRIES"); do
-            if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$RELEASE_VERSION" > /dev/null 2>&1; then
-              echo "Tag $RELEASE_VERSION is reachable (attempt $i/$MAX_RETRIES)"
+            if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+              echo "Tag $RELEASE_TAG is reachable (attempt $i/$MAX_RETRIES)"
               exit 0
             fi
-            echo "Tag $RELEASE_VERSION not yet reachable (attempt $i/$MAX_RETRIES). Retrying in ${DELAY}s..."
+            echo "Tag $RELEASE_TAG not yet reachable (attempt $i/$MAX_RETRIES). Retrying in ${DELAY}s..."
             sleep "$DELAY"
           done
-          echo "::error::Tag $RELEASE_VERSION was not reachable after $MAX_RETRIES attempts"
+          echo "::error::Tag $RELEASE_TAG was not reachable after $MAX_RETRIES attempts"
           exit 1
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag_name }}
           REPO: ${{ github.repository }}
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: refs/tags/${{ inputs.release_version }}
+          ref: refs/tags/${{ needs.release.outputs.tag_name }}
 
       - name: Create Release Notes
         uses: openmrs/openmrs-contrib-create-release-notes@aa823dd951f06f4637c22e25a0283b929b505d23 # v1.0.3
@@ -318,12 +341,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          head-ref: refs/tags/${{ inputs.release_version }}
+          head-ref: refs/tags/${{ needs.release.outputs.tag_name }}
 
       - name: Create Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
         with:
-          tag_name: ${{ inputs.release_version }}
+          tag_name: ${{ needs.release.outputs.tag_name }}
           name: ${{ inputs.release_version }}
           body: |
             ## What's Changed

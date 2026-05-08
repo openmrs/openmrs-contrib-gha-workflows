@@ -36,6 +36,9 @@ OPENMRS_DEPS = {
     ("org.openmrs.web", "openmrs-web"),
 }
 
+# maven-release-plugin's built-in default when <tagNameFormat> is not configured.
+DEFAULT_RELEASE_TAG_FORMAT = "@{project.artifactId}-@{project.version}"
+
 
 # ---------------------------------------------------------------------------
 # Effective POM loading
@@ -239,7 +242,7 @@ def find_server_ids(project):
 
 
 # ---------------------------------------------------------------------------
-# POM project version
+# POM project version and artifactId
 # ---------------------------------------------------------------------------
 
 
@@ -251,6 +254,41 @@ def find_project_version(project):
     parent_ver = project.findtext("parent/version")
     if parent_ver:
         return parent_ver.strip()
+    return None
+
+
+def find_artifact_id(project):
+    """Extract artifactId from a <project> element."""
+    aid = project.findtext("artifactId")
+    return aid.strip() if aid else None
+
+
+# ---------------------------------------------------------------------------
+# maven-release-plugin tagNameFormat
+# ---------------------------------------------------------------------------
+
+
+def find_release_tag_format(project):
+    """Find <tagNameFormat> from maven-release-plugin configuration.
+
+    The effective POM only contains tagNameFormat if it's configured somewhere
+    in the pom inheritance chain or pluginManagement. The plugin's runtime
+    default (DEFAULT_RELEASE_TAG_FORMAT) is not surfaced here, so callers
+    should treat a None return as "use the plugin default".
+    """
+    for path in ("build/plugins", "build/pluginManagement/plugins"):
+        plugins = project.find(path)
+        if plugins is None:
+            continue
+        for plugin in plugins.findall("plugin"):
+            if plugin.findtext("artifactId", "") != "maven-release-plugin":
+                continue
+            config = plugin.find("configuration")
+            if config is None:
+                continue
+            fmt = config.findtext("tagNameFormat")
+            if fmt and fmt.strip():
+                return fmt.strip()
     return None
 
 
@@ -286,9 +324,12 @@ def main():
     else:
         main_java = None
 
-    # Server IDs and project version come from the aggregator (first project).
+    # Server IDs, project coordinates, and release tag format come from the
+    # aggregator (first project).
     release_id, snapshot_id = find_server_ids(primary)
     project_version = find_project_version(primary)
+    project_artifact_id = find_artifact_id(primary)
+    release_tag_format = find_release_tag_format(primary) or DEFAULT_RELEASE_TAG_FORMAT
 
     write_github_outputs(
         {
@@ -299,6 +340,8 @@ def main():
             "release_server_id": release_id,
             "snapshot_server_id": snapshot_id,
             "project_version": project_version,
+            "project_artifact_id": project_artifact_id,
+            "release_tag_format": release_tag_format,
         }
     )
 
