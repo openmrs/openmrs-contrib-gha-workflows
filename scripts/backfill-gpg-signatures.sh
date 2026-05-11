@@ -192,16 +192,24 @@ while :; do
     exit 1
   fi
 
-  count="$(echo "$response" | jq '.results | length')"
-  if [ "$count" = "0" ]; then break; fi
+  count="$(echo "$response" | jq '(.results // []) | length')"
+  if [ -z "$count" ] || [ "$count" = "0" ]; then break; fi
 
-  echo "$response" | jq -r '.results[] | "\(.repo)/\(.path)/\(.name)"' \
-    | grep -vE '\.(asc|md5|sha1|sha256|sha512)$' \
-    | grep -vE '/maven-metadata\.xml(\.[^/]+)?$' \
-    >> "$urls_file" || true
+  before_lines="$(wc -l < "$urls_file" | tr -d ' ')"
+  echo "$response" | jq -r '
+    (.results // [])[]
+    | "\(.repo)/\(.path)/\(.name)"
+    | select(
+        (test("\\.(asc|md5|sha1|sha256|sha512)$") | not)
+        and (test("/maven-metadata\\.xml(\\.[^/]+)?$") | not)
+      )
+  ' >> "$urls_file"
+  after_lines="$(wc -l < "$urls_file" | tr -d ' ')"
+  page_signable=$((after_lines - before_lines))
 
-  total_listed=$((total_listed + count))
-  echo "  page offset=$offset got=$count (cumulative=$total_listed)"
+  # Track signable items only; raw AQL rows include filtered-out checksums/metadata.
+  total_listed=$((total_listed + page_signable))
+  echo "  page offset=$offset got=$count signable=$page_signable (cumulative=$total_listed)"
   offset=$((offset + PAGE_SIZE))
 
   # AQL has no continuation token; a short page means we've hit the end.
@@ -384,4 +392,15 @@ if [ "$APPLY" = "true" ] && [ -n "$last_uploaded" ]; then
   fi
 fi
 
-[ "$failed" = "0" ] && [ "$deferred" = "0" ]
+# Exit codes (failed takes precedence over deferred):
+#   0 — clean run (all uploads succeeded or were already present)
+#   1 — at least one artifact failed (download/sign/upload error)
+#   2 — at least one artifact was deferred (HEAD probe unreliable); a rerun
+#       may resolve it without operator intervention
+if [ "$failed" -gt 0 ]; then
+  exit 1
+fi
+if [ "$deferred" -gt 0 ]; then
+  exit 2
+fi
+exit 0
