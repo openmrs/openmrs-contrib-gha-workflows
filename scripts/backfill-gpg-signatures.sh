@@ -173,6 +173,22 @@ fi
 echo "Imported $sec_count secret key(s):"
 gpg --list-secret-keys --keyid-format=long
 
+# Auth preflight: probe the repo config endpoint so a bad token or missing
+# repo fails fast with a clear message instead of degrading into thousands of
+# "deferred" HEADs.
+echo ""
+echo "Validating credentials against repo='$REPO'..."
+probe_code="$(curl -sI -o /dev/null -w '%{http_code}' \
+    --max-time 30 --netrc-file "$NETRC" \
+    "$ARTIFACTORY_URL/api/repositories/$REPO" 2>/dev/null)" || probe_code="000"
+case "$probe_code" in
+  2*)  echo "Auth OK." ;;
+  401) echo "error: 401 Unauthorized — check ARTIFACTORY_USER / ARTIFACTORY_TOKEN" >&2; exit 1 ;;
+  403) echo "error: 403 Forbidden — token lacks read permission on repo '$REPO'" >&2; exit 1 ;;
+  404) echo "error: 404 — repo '$REPO' does not exist at $ARTIFACTORY_URL" >&2; exit 1 ;;
+  *)   echo "error: auth probe returned HTTP $probe_code from $ARTIFACTORY_URL/api/repositories/$REPO" >&2; exit 1 ;;
+esac
+
 echo ""
 echo "Listing artifacts in repo='$REPO' under path='$prefix_path/*' via AQL..."
 
@@ -192,18 +208,35 @@ while :; do
     exit 1
   fi
 
-  count="$(echo "$response" | jq '(.results // []) | length')"
-  if [ -z "$count" ] || [ "$count" = "0" ]; then break; fi
+  # Parse count and filter rows with explicit error handling. Buffering jq's
+  # output before appending guarantees we never leave partial rows in
+  # urls_file: if jq fails mid-stream we abort with no file mutation. This is
+  # the one thing a one-off can't tolerate — a truncated listing followed by a
+  # green Summary means the operator declares victory on a partial backfill.
+  if ! count="$(echo "$response" | jq '(.results // []) | length')" || [ -z "$count" ]; then
+    echo "error: failed to parse AQL response at offset=$offset" >&2
+    echo "$response" | head -c 500 >&2
+    exit 1
+  fi
+  [ "$count" = "0" ] && break
+
+  if ! page_paths="$(echo "$response" | jq -r '
+        (.results // [])[]
+        | "\(.repo)/\(.path)/\(.name)"
+        | select(
+            (test("\\.(asc|md5|sha1|sha256|sha512)$") | not)
+            and (test("/maven-metadata\\.xml(\\.[^/]+)?$") | not)
+          )
+      ')"; then
+    echo "error: failed to extract paths from AQL response at offset=$offset" >&2
+    echo "$response" | head -c 500 >&2
+    exit 1
+  fi
 
   before_lines="$(wc -l < "$urls_file" | tr -d ' ')"
-  echo "$response" | jq -r '
-    (.results // [])[]
-    | "\(.repo)/\(.path)/\(.name)"
-    | select(
-        (test("\\.(asc|md5|sha1|sha256|sha512)$") | not)
-        and (test("/maven-metadata\\.xml(\\.[^/]+)?$") | not)
-      )
-  ' >> "$urls_file"
+  if [ -n "$page_paths" ]; then
+    printf '%s\n' "$page_paths" >> "$urls_file"
+  fi
   after_lines="$(wc -l < "$urls_file" | tr -d ' ')"
   page_signable=$((after_lines - before_lines))
 
@@ -236,6 +269,13 @@ failed_file="$WORKDIR/failed.txt"
 : > "$deferred_file"
 : > "$failed_file"
 
+# Circuit breaker: bail out if too many artifacts in a row defer. A bad token
+# or Artifactory outage manifests as every HEAD returning 401/403/5xx, and we
+# don't want to grind through thousands of artifacts only to exit 2 looking
+# like a transient probe glitch.
+consecutive_defers=0
+DEFER_CIRCUIT_BREAKER=5
+
 while IFS= read -r relpath; do
   [ -z "$relpath" ] && continue
   url="$ARTIFACTORY_URL/$relpath"
@@ -252,8 +292,21 @@ while IFS= read -r relpath; do
     echo "warn: HEAD probe unreliable; deferring (rerun to retry)"
     echo "$relpath" >> "$deferred_file"
     deferred=$((deferred + 1))
+    consecutive_defers=$((consecutive_defers + 1))
+    if [ "$consecutive_defers" -ge "$DEFER_CIRCUIT_BREAKER" ]; then
+      echo "error: $consecutive_defers consecutive HEAD failures — aborting." >&2
+      echo "       Likely cause: token revoked mid-run, Artifactory unavailable," >&2
+      echo "       or read permission scoped differently from search permission." >&2
+      if [ -s "$deferred_file" ]; then
+        echo "" >&2
+        echo "Deferred so far:" >&2
+        sed 's/^/  - /' "$deferred_file" >&2
+      fi
+      exit 1
+    fi
     continue
   fi
+  consecutive_defers=0
 
   if [ "$asc_state" = 0 ] && [ "$md5_state" = 0 ] && [ "$sha1_state" = 0 ]; then
     echo "Signature already present; skipping."
