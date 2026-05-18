@@ -152,7 +152,7 @@ jobs:
           mvn --batch-mode $MVN_GOALS
 
       - name: Run OWASP Dependency-Check
-        uses: dependency-check/Dependency-Check_Action@75ba02d6183445fe0761d26e836bde58b1560600 # 1.1.0
+        uses: dependency-check/Dependency-Check_Action@1e54355a8b4c8abaa8cc7d0b70aa655a3bb15a6c  # main commit this is setup for
         id: dependency-check
         env:
           JAVA_HOME: /opt/jdk
