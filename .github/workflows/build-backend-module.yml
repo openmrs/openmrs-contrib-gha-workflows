@@ -47,6 +47,7 @@ jobs:
       main_java_version: ${{ steps.params.outputs.main_java_version }}
       snapshot_server_id: ${{ steps.server.outputs.snapshot_id }}
       deploy_branches: ${{ steps.deploy.outputs.branches }}
+      is_snapshot: ${{ steps.snapshot.outputs.is_snapshot }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -96,6 +97,17 @@ jobs:
           INFERRED_ID: ${{ steps.infer.outputs.snapshot_server_id }}
         run: |
           echo "snapshot_id=${INFERRED_ID:-openmrs-repo-snapshots}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if project version is a SNAPSHOT
+        id: snapshot
+        env:
+          POM_VERSION: ${{ steps.infer.outputs.project_version }}
+        run: |
+          if [[ "$POM_VERSION" == *-SNAPSHOT ]]; then
+            echo "is_snapshot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_snapshot=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Resolve deploy branches
         id: deploy
@@ -208,6 +220,7 @@ jobs:
     needs: [prepare, build]
     if: >-
       inputs.deploy_snapshots
+      && needs.prepare.outputs.is_snapshot == 'true'
       && github.repository_owner == 'openmrs'
       && github.head_ref == ''
       && contains(fromJSON(needs.prepare.outputs.deploy_branches), github.ref_name)
