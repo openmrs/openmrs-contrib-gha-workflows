@@ -1,0 +1,52 @@
+name: Backfill GPG Signatures
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Artifactory repo key (e.g. modules, modules-snapshots, public)'
+        type: string
+        required: true
+      maven_prefix:
+        description: 'Maven coordinate prefix; matches anything starting with this (e.g. org.openmrs, org.openmrs.module.xforms)'
+        type: string
+        default: 'org.openmrs'
+      artifactory_url:
+        description: 'Artifactory base URL'
+        type: string
+        default: 'https://openmrs.jfrog.io/artifactory'
+      apply:
+        description: 'Actually upload signatures (unchecked = dry run)'
+        type: boolean
+        default: false
+
+jobs:
+  backfill:
+    name: Sign and upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: backfill-gpg-signatures-${{ inputs.repo }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run backfill
+        env:
+          ARTIFACTORY_USER: ${{ secrets.MAVEN_REPO_USERNAME }}
+          ARTIFACTORY_TOKEN: ${{ secrets.MAVEN_REPO_API_KEY }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          args=(
+            --repo "${{ inputs.repo }}"
+            --maven-prefix "${{ inputs.maven_prefix }}"
+            --artifactory-url "${{ inputs.artifactory_url }}"
+          )
+          if [ "${{ inputs.apply }}" = "true" ]; then
+            args+=(--apply)
+          fi
+          ./scripts/backfill-gpg-signatures.sh "${args[@]}"
