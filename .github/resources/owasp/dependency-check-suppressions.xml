@@ -132,4 +132,21 @@
         ]]></notes>
         <cve>CVE-2026-40075</cve>
     </suppress>
+    <suppress>
+        <notes><![CDATA[
+        co.elastic.clients:elasticsearch-java is the Java REST client library, not the
+        Elasticsearch server. The scanner's CPE matcher conflates the client jar with
+        cpe:/a:elastic:elasticsearch and cpe:/a:elasticsearch:elasticsearch (the server product),
+        so every server-only CVE published against that Elasticsearch version is falsely
+        attributed to the client jar (e.g. CVE-2024-23445, CVE-2024-52979/52980/52981,
+        CVE-2025-37731, CVE-2025-68384 — all server-side: cross-cluster API keys, query
+        StackOverflow/DoS in the server, etc.). Suppress the two server CPEs for the client jar
+        rather than enumerating CVEs, so the suppression survives client version bumps and future
+        server-only CVEs. A genuine client-library CVE would carry the co.elastic.clients
+        coordinate (or a client-specific CPE), not these server CPEs, so it still surfaces.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/co\.elastic\.clients/elasticsearch-java@.*$</packageUrl>
+        <cpe>cpe:/a:elastic:elasticsearch</cpe>
+        <cpe>cpe:/a:elasticsearch:elasticsearch</cpe>
+    </suppress>
 </suppressions>
