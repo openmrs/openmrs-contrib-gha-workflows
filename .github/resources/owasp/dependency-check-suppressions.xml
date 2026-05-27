@@ -110,4 +110,26 @@
         ]]></notes>
         <cve>CVE-2020-5733</cve>
     </suppress>
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-40076: Zip Slip path traversal in the module upload endpoint
+        (POST /openmrs/ws/rest/v1/module) of openmrs-core 2.7.8 and prior and 2.8.0 through 2.8.5,
+        allowing an authenticated attacker with module upload access to write files outside the
+        module directory and achieve RCE. Fixed in openmrs-core 2.8.6. This is a false positive
+        for module JARs — the vulnerable extraction logic lives in openmrs-core, not in any module.
+        The scanner matches on the shared openmrs namespace.
+        ]]></notes>
+        <cve>CVE-2026-40076</cve>
+    </suppress>
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-40075: Path traversal in the /openmrs/moduleResources/{moduleid} endpoint of
+        openmrs-core 2.7.8 and prior and 2.8.0 through 2.8.5. ModuleResourcesServlet builds a
+        filesystem path from user-controlled input without boundary validation, and because the
+        endpoint is unauthenticated it allows reading arbitrary files. Fixed in openmrs-core 2.8.6.
+        This is a false positive for module JARs — the vulnerable servlet belongs to openmrs-core,
+        not to any module. The scanner matches on the shared openmrs namespace.
+        ]]></notes>
+        <cve>CVE-2026-40075</cve>
+    </suppress>
 </suppressions>
