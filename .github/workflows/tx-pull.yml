@@ -42,8 +42,15 @@ on:
     secrets:
       TRANSIFEX_TOKEN:
         required: true
+      APP_ID:
+        description: 'GitHub App ID for the translation bot. When set with APP_PRIVATE_KEY, a short-lived App token is preferred over BOT_GH_TOKEN.'
+        required: false
+      APP_PRIVATE_KEY:
+        description: 'Private key for the translation bot GitHub App.'
+        required: false
       BOT_GH_TOKEN:
-        required: true
+        description: 'Legacy bot PAT for creating/merging the PR. Fallback when App credentials are not provided.'
+        required: false
 
 jobs:
   pull-translations-from-transifex:
@@ -52,6 +59,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
 
     steps:
       - name: 📥 Checkout repository
@@ -63,6 +72,14 @@ jobs:
           token: ${{ secrets.TRANSIFEX_TOKEN }}
           args: ${{ inputs.transifex_args }}
 
+      - name: 🔑 Generate GitHub App token
+        id: app-token
+        if: env.HAS_APP_CREDS == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: 📝 Create PR if necessary
         id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -73,7 +90,7 @@ jobs:
           branch: ${{ inputs.branch }}
           author: '${{ inputs.author_name }} <${{ inputs.author_email }}>'
           committer: '${{ inputs.committer_name }} <${{ inputs.committer_email }}>'
-          token: ${{ secrets.BOT_GH_TOKEN }}
+          token: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN || github.token }}
 
       - name: ✅ Auto approve PR
         if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
@@ -85,4 +102,4 @@ jobs:
         if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
         run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
         env:
-          GH_TOKEN: ${{ secrets.BOT_GH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN || github.token }}

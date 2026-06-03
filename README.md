@@ -2,6 +2,56 @@
 
 Collection of github centralised workflows that are automatically synced to other repos in the github org.
 
+## Bot authentication
+
+Workflows that need elevated, cross-repo, or branch-protection-bypassing access authenticate as a **GitHub App**,
+minting a short-lived installation token at runtime via
+[`actions/create-github-app-token`](https://github.com/actions/create-github-app-token). Each workflow exposes two
+optional `workflow_call` secrets — `APP_ID` and `APP_PRIVATE_KEY` — that the caller wires to the relevant App.
+
+To avoid breaking repositories that have not yet been migrated, each workflow resolves its token with a fallback chain:
+
+```
+App token (if APP_ID + APP_PRIVATE_KEY are set)  →  legacy bot PAT (if set)  →  github.token
+```
+
+So a repo that passes the App credentials uses the App; a repo still passing the old PAT keeps working unchanged. Once
+every consuming repo has migrated, the legacy PAT secrets and the `|| secrets.<PAT>` fallback can be removed.
+
+The four functions are backed by four separate Apps, each installed only where it is needed and granted the minimum
+permissions:
+
+| Function | Workflow | App permissions | Installed on |
+| --- | --- | --- | --- |
+| Translation updates | `tx-pull.yml` | `contents: write`, `pull-requests: write` | repos with Transifex automation |
+| Module release | `release-backend-module.yml` | `contents: write` (+ ruleset bypass) | released backend module repos |
+| Distro build trigger | `release-frontend-module.yml` | `actions: write` | `openmrs-distro-referenceapplication` |
+| Security dashboard | `owasp-dependency-check.yml` | `contents: write` | `openmrs-contrib-dependency-vulnerability-dashboard` |
+
+Recommended org-secret names for the App credentials: `OMRS_TRANSLATION`, `OMRS_MODULE_RELEASE`, `OMRS_ESM_RELEASE`, and
+`OMRS_SEC_DASHBOARD` (each with an `_APP_ID` / `_APP_PRIVATE_KEY` pair). A caller wires them to the generic inputs, e.g.:
+
+```yaml
+jobs:
+  pull-translations:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/tx-pull.yml@main
+    secrets:
+      TRANSIFEX_TOKEN: ${{ secrets.TRANSIFEX_TOKEN }}
+      APP_ID:          ${{ secrets.OMRS_TRANSLATION_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.OMRS_TRANSLATION_APP_PRIVATE_KEY }}
+```
+
+### Setup notes
+
+- **Branch-protection bypass:** unlike an admin PAT, a GitHub App token does **not** bypass branch protection / rulesets
+  implicitly. The module release App must be added to each target repo's ruleset **bypass list**.
+- **Cross-repo scope:** the distro and dashboard tokens are minted scoped to the target repo (`owner` + `repositories`),
+  so those Apps must be installed on the target repo even when the workflow runs elsewhere.
+- **`github.token` is a safety net only:** it cannot bypass branch protection or dispatch across repos, so the module
+  release, distro, and dashboard workflows still require either App credentials or the legacy PAT to function fully.
+- **Token lifetime:** App installation tokens expire after one hour. For a backend release that runs longer than that
+  before pushing its release commit/tag, prefer the legacy PAT until the release can re-mint the token closer to the push.
+
 ## OWASP Dependency-Check
 
 There is a reusable workflow that runs [OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) against Java

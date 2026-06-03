@@ -55,8 +55,14 @@ on:
       GPG_PASSPHRASE:
         description: 'Passphrase for the GPG private key'
         required: false
+      APP_ID:
+        description: 'GitHub App ID for the module release bot. When set with APP_PRIVATE_KEY, a short-lived App token is preferred over BOT_PAT. The App must be on the target ruleset bypass list to push past branch protection.'
+        required: false
+      APP_PRIVATE_KEY:
+        description: 'Private key for the module release bot GitHub App.'
+        required: false
       BOT_PAT:
-        description: 'Personal Access Token for bypassing branch protections'
+        description: 'Legacy Personal Access Token for bypassing branch protections. Fallback when App credentials are not provided.'
         required: false
 
 jobs:
@@ -71,6 +77,8 @@ jobs:
       contents: write
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
+    env:
+      HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
 
     steps:
       - name: Validate version inputs
@@ -144,12 +152,20 @@ jobs:
           BRANCH: ${{ steps.branch.outputs.name }}
           REPO: ${{ github.repository }}
 
+      - name: Generate GitHub App token
+        id: app-token
+        if: env.HAS_APP_CREDS == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           ref: ${{ steps.branch.outputs.name }}
-          token: ${{ secrets.BOT_PAT || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
 
       - name: Checkout release scripts
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
