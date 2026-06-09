@@ -57,6 +57,7 @@ jobs:
     env:
       SUPPRESSION_FILE: ${{ inputs.suppression_file }}
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+      HAS_PAT: ${{ secrets.BOT_GH_TOKEN != '' }}
 
     steps:
       - name: Checkout repository
@@ -182,6 +183,12 @@ jobs:
           name: Dependency Check report
           path: ${{ github.workspace }}/reports
 
+      - name: Verify dashboard sync credentials
+        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        run: |
+          echo "::error::Syncing the report to the dashboard repo needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_GH_TOKEN. github.token cannot write to another repository."
+          exit 1
+
       - name: Generate GitHub App token
         id: app-token
         if: always() && env.HAS_APP_CREDS == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -197,7 +204,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
-          token: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN }}
           path: dashboard-repo
 
       - name: Copy report into dependency vulnerability dashboard repo

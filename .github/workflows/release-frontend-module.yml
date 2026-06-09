@@ -187,6 +187,7 @@ jobs:
     needs: pre_release
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+      HAS_PAT: ${{ secrets.BOT_PAT != '' }}
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -195,6 +196,12 @@ jobs:
       && inputs.trigger_refapp_build
 
     steps:
+      - name: 🔒 Verify cross-repo dispatch credentials
+        if: env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        run: |
+          echo "::error::Triggering the RefApp build needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_PAT. github.token cannot dispatch to another repository."
+          exit 1
+
       - name: 🔑 Generate GitHub App token
         id: app-token
         if: env.HAS_APP_CREDS == 'true'
@@ -208,7 +215,7 @@ jobs:
       - name: 🚀 Trigger RefApp Frontend Docker Image Build
         run: gh workflow run build-frontend.yml --repo openmrs/openmrs-distro-referenceapplication
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_PAT }}
 
   release:
     name: Release

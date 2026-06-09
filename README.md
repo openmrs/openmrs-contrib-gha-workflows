@@ -47,8 +47,10 @@ jobs:
   implicitly. The module release App must be added to each target repo's ruleset **bypass list**.
 - **Cross-repo scope:** the distro and dashboard tokens are minted scoped to the target repo (`owner` + `repositories`),
   so those Apps must be installed on the target repo even when the workflow runs elsewhere.
-- **`github.token` is a safety net only:** it cannot bypass branch protection or dispatch across repos, so the module
-  release, distro, and dashboard workflows still require either App credentials or the legacy PAT to function fully.
+- **`github.token` is a repo-local safety net only:** it cannot bypass branch protection or act across repositories. The
+  module release checkout falls back to it (a push only fails later if the branch is protected), but the distro-dispatch
+  and dashboard-sync workflows are cross-repo, so they omit it from the fallback and **fail fast** with a clear error when
+  neither App credentials nor the legacy PAT are provided.
 - **Token lifetime:** App installation tokens expire after one hour. For a backend release that runs longer than that
   before pushing its release commit/tag, prefer the legacy PAT until the release can re-mint the token closer to the push.
 
