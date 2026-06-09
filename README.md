@@ -51,6 +51,8 @@ jobs:
   module release checkout falls back to it (a push only fails later if the branch is protected), but the distro-dispatch
   and dashboard-sync workflows are cross-repo, so they omit it from the fallback and **fail fast** with a clear error when
   neither App credentials nor the legacy PAT are provided.
+- **Dashboard sync is org-scoped:** `owasp-dependency-check` only syncs the report to the dashboard repo on
+  `push`/`workflow_dispatch` events in the `openmrs` org, so forks run the scan without needing dashboard credentials.
 - **Token lifetime:** App installation tokens expire after one hour. For a backend release that runs longer than that
   before pushing its release commit/tag, prefer the legacy PAT until the release can re-mint the token closer to the push.
 

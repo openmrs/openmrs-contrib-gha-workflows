@@ -58,6 +58,7 @@ jobs:
       SUPPRESSION_FILE: ${{ inputs.suppression_file }}
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       HAS_PAT: ${{ secrets.BOT_GH_TOKEN != '' }}
+      SYNC_DASHBOARD: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.repository_owner == 'openmrs' }}
 
     steps:
       - name: Checkout repository
@@ -184,14 +185,14 @@ jobs:
           path: ${{ github.workspace }}/reports
 
       - name: Verify dashboard sync credentials
-        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
         run: |
           echo "::error::Syncing the report to the dashboard repo needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_GH_TOKEN. github.token cannot write to another repository."
           exit 1
 
       - name: Generate GitHub App token
         id: app-token
-        if: always() && env.HAS_APP_CREDS == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_APP_CREDS == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.APP_ID }}
@@ -200,7 +201,7 @@ jobs:
           repositories: openmrs-contrib-dependency-vulnerability-dashboard
 
       - name: Checkout dependency vulnerability dashboard repo
-        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: always() && env.SYNC_DASHBOARD == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
@@ -208,13 +209,13 @@ jobs:
           path: dashboard-repo
 
       - name: Copy report into dependency vulnerability dashboard repo
-        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: always() && env.SYNC_DASHBOARD == 'true'
         run: |
           mkdir -p dashboard-repo/data
           cp reports/dependency-check-report.json dashboard-repo/data/${{ github.event.repository.name }}.json
 
       - name: Commit and push report
-        if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        if: always() && env.SYNC_DASHBOARD == 'true'
         run: |
           cd dashboard-repo
           git config user.name "OpenMRS Bot"
