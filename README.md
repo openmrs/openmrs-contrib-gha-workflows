@@ -15,6 +15,11 @@ To avoid breaking repositories that have not yet been migrated, each workflow re
 App token (if APP_ID + APP_PRIVATE_KEY are set)  →  legacy bot PAT (if set)  →  github.token
 ```
 
+`github.token` is only a viable last resort for the **module release** checkout (a repo-local operation). The other
+three operations cannot work under `github.token` — cross-repo dispatch/push for the distro and dashboard workflows, and
+a CI-triggering, self-approvable PR for translations — so those workflows omit it and **fail fast** with a clear error
+when neither App credentials nor the legacy PAT are supplied.
+
 So a repo that passes the App credentials uses the App; a repo still passing the old PAT keeps working unchanged. Once
 every consuming repo has migrated, the legacy PAT secrets and the `|| secrets.<PAT>` fallback can be removed.
 
@@ -48,9 +53,9 @@ jobs:
 - **Cross-repo scope:** the distro and dashboard tokens are minted scoped to the target repo (`owner` + `repositories`),
   so those Apps must be installed on the target repo even when the workflow runs elsewhere.
 - **`github.token` is a repo-local safety net only:** it cannot bypass branch protection or act across repositories. The
-  module release checkout falls back to it (a push only fails later if the branch is protected), but the distro-dispatch
-  and dashboard-sync workflows are cross-repo, so they omit it from the fallback and **fail fast** with a clear error when
-  neither App credentials nor the legacy PAT are provided.
+  module release checkout falls back to it (a push only fails later if the branch is protected), but the distro-dispatch,
+  dashboard-sync, and translation workflows omit it from the fallback and **fail fast** with a clear error when neither
+  App credentials nor the legacy PAT are provided.
 - **Dashboard sync is org-scoped:** `owasp-dependency-check` only syncs the report to the dashboard repo on
   `push`/`workflow_dispatch` events in the `openmrs` org, so forks run the scan without needing dashboard credentials.
 - **Token lifetime:** App installation tokens expire after one hour. For a backend release that runs longer than that

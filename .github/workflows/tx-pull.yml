@@ -61,8 +61,15 @@ jobs:
       pull-requests: write
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+      HAS_PAT: ${{ secrets.BOT_GH_TOKEN != '' }}
 
     steps:
+      - name: 🔒 Verify credentials
+        if: env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        run: |
+          echo "::error::Creating and auto-merging the translation PR needs credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_GH_TOKEN. A PR authored by github.token does not trigger CI and cannot be self-approved."
+          exit 1
+
       - name: 📥 Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -90,7 +97,7 @@ jobs:
           branch: ${{ inputs.branch }}
           author: '${{ inputs.author_name }} <${{ inputs.author_email }}>'
           committer: '${{ inputs.committer_name }} <${{ inputs.committer_email }}>'
-          token: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN }}
 
       - name: ✅ Auto approve PR
         if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
@@ -102,4 +109,4 @@ jobs:
         if: steps.cpr.outputs.pull-request-operation == 'created' || steps.cpr.outputs.pull-request-operation == 'updated'
         run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_GH_TOKEN }}
