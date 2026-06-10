@@ -57,7 +57,7 @@ jobs:
     env:
       SUPPRESSION_FILE: ${{ inputs.suppression_file }}
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
-      HAS_PAT: ${{ secrets.BOT_GH_TOKEN != '' }}
+      HAS_CREDS: ${{ (secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '') || secrets.BOT_GH_TOKEN != '' }}
       SYNC_DASHBOARD: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.repository_owner == 'openmrs' }}
 
     steps:
@@ -185,7 +185,7 @@ jobs:
           path: ${{ github.workspace }}/reports
 
       - name: Verify dashboard sync credentials
-        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_CREDS != 'true'
         run: |
           echo "::error::Syncing the report to the dashboard repo needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_GH_TOKEN. github.token cannot write to another repository."
           exit 1
@@ -201,7 +201,7 @@ jobs:
           repositories: openmrs-contrib-dependency-vulnerability-dashboard
 
       - name: Checkout dependency vulnerability dashboard repo
-        if: always() && env.SYNC_DASHBOARD == 'true'
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_CREDS == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openmrs/openmrs-contrib-dependency-vulnerability-dashboard
@@ -209,13 +209,13 @@ jobs:
           path: dashboard-repo
 
       - name: Copy report into dependency vulnerability dashboard repo
-        if: always() && env.SYNC_DASHBOARD == 'true'
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_CREDS == 'true'
         run: |
           mkdir -p dashboard-repo/data
           cp reports/dependency-check-report.json dashboard-repo/data/${{ github.event.repository.name }}.json
 
       - name: Commit and push report
-        if: always() && env.SYNC_DASHBOARD == 'true'
+        if: always() && env.SYNC_DASHBOARD == 'true' && env.HAS_CREDS == 'true'
         run: |
           cd dashboard-repo
           git config user.name "OpenMRS Bot"

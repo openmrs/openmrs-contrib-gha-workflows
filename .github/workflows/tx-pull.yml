@@ -61,11 +61,11 @@ jobs:
       pull-requests: write
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
-      HAS_PAT: ${{ secrets.BOT_GH_TOKEN != '' }}
+      HAS_CREDS: ${{ (secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '') || secrets.BOT_GH_TOKEN != '' }}
 
     steps:
       - name: 🔒 Verify credentials
-        if: env.HAS_APP_CREDS != 'true' && env.HAS_PAT != 'true'
+        if: env.HAS_CREDS != 'true'
         run: |
           echo "::error::Creating and auto-merging the translation PR needs credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_GH_TOKEN. A PR authored by github.token does not trigger CI and cannot be self-approved."
           exit 1
