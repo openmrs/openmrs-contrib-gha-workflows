@@ -79,8 +79,15 @@ jobs:
       tag_name: ${{ steps.tag.outputs.name }}
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
+      PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
 
     steps:
+      - name: Reject partial App credentials
+        if: env.PARTIAL_APP_CREDS == 'true'
+        run: |
+          echo "::error::APP_ID and APP_PRIVATE_KEY must be set together — got one without the other. Check for a typo in the caller's secret names."
+          exit 1
+
       - name: Validate version inputs
         run: |
           SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*)){0,1}(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*)){0,1}$'

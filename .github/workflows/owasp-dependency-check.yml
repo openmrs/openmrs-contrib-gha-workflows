@@ -196,8 +196,15 @@ jobs:
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       HAS_CREDS: ${{ (secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '') || secrets.BOT_GH_TOKEN != '' }}
+      PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
 
     steps:
+      - name: Reject partial App credentials
+        if: env.PARTIAL_APP_CREDS == 'true'
+        run: |
+          echo "::error::APP_ID and APP_PRIVATE_KEY must be set together — got one without the other. Check for a typo in the caller's secret names."
+          exit 1
+
       - name: Verify dashboard sync credentials
         if: env.HAS_CREDS != 'true'
         run: |
