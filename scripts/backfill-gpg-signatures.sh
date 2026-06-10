@@ -3,8 +3,11 @@
 # Backfill GPG signatures for Maven artifacts in JFrog Artifactory.
 #
 # Lists artifacts under a Maven coordinate prefix in a target Artifactory repo
-# via AQL, then for each artifact missing a .asc file: download, detach-sign,
-# and PUT the .asc (+ .asc.md5, .asc.sha1) back to the same path.
+# via AQL, then for each artifact backfills whatever is missing: a detached GPG
+# signature of the artifact (.asc, plus .asc.md5/.asc.sha1 checksums of it),
+# the artifact checksums (.md5/.sha1/.sha256), and a detached signature of each
+# of those checksums (.md5.asc/.sha1.asc/.sha256.asc). Only missing files are
+# generated and PUT back to the same path.
 #
 # Required env:
 #   ARTIFACTORY_USER     Artifactory username
@@ -19,7 +22,7 @@
 #   scripts/backfill-gpg-signatures.sh --repo modules
 #   scripts/backfill-gpg-signatures.sh --repo modules --maven-prefix org.openmrs.module.xforms --apply
 #
-# Defaults to dry-run. Pass --apply to actually upload signatures.
+# Defaults to dry-run. Pass --apply to actually upload signatures and checksums.
 
 set -euo pipefail
 
@@ -51,7 +54,8 @@ Options:
                              org.openmrs.module.xforms.xforms-omod  (one artifactId)
   --artifactory-url URL    Artifactory base URL (default: \$ARTIFACTORY_URL or
                            https://openmrs.jfrog.io/artifactory)
-  --apply                  Actually upload signatures (default: dry-run)
+  --apply                  Actually upload signatures and checksums
+                           (default: dry-run)
   -h, --help               Show this help
 
 Required env: ARTIFACTORY_USER, ARTIFACTORY_TOKEN, GPG_PRIVATE_KEY, GPG_PASSPHRASE
@@ -84,7 +88,7 @@ for var in ARTIFACTORY_USER ARTIFACTORY_TOKEN GPG_PRIVATE_KEY GPG_PASSPHRASE; do
   fi
 done
 
-for cmd in jq gpg curl awk; do
+for cmd in jq gpg curl awk md5sum sha1sum sha256sum; do
   if ! command -v "$cmd" >/dev/null; then
     echo "error: $cmd is required" >&2
     exit 1
@@ -156,6 +160,77 @@ url_exists() {
     attempt=$((attempt + 1))
   done
   return 2
+}
+
+# Create a detached, armored GPG signature ($f.asc) for $f using the imported
+# key. Passphrase is piped via loopback pinentry so it never hits the command
+# line. Used for both the artifact and each of its checksum files.
+gpg_sign() {
+  local f="$1"
+  printf '%s' "$GPG_PASSPHRASE" \
+    | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+          --detach-sign --armor "$f"
+}
+
+# Backfill one artifact checksum and (optionally) its detached signature.
+#   $1 ext       — md5 | sha1 | sha256
+#   $2 sumcmd    — md5sum | sha1sum | sha256sum
+#   $3 cs_state  — url_exists state of $url.$ext      (0 present, else missing)
+#   $4 sig_state — url_exists state of $url.$ext.asc  (0 present, else missing)
+# Reads globals filepath/url/NETRC/TIMEOUT_DOWNLOAD and appends missing items to
+# the to_upload array. Returns non-zero on any compute/fetch/sign failure so the
+# caller can mark the artifact failed and skip it.
+prepare_checksum() {
+  local ext="$1" sumcmd="$2" cs_state="$3" sig_state="$4"
+  local csfile="$filepath.$ext" expected actual
+
+  if [ "$cs_state" != 0 ]; then
+    # Absent on the server: generate our canonical bare-digest form.
+    if ! "$sumcmd" "$filepath" | awk '{print $1}' > "$csfile"; then
+      echo "error: failed to compute $ext checksum" >&2
+      return 1
+    fi
+    to_upload+=("$ext")
+    # Regenerating the checksum makes any pre-existing $ext.asc on the server
+    # suspect: it may have signed different bytes (e.g. a "digest  filename"
+    # format from other tooling). Treat it as dirty and re-sign below.
+    sig_state=1
+  elif [ "$sig_state" != 0 ]; then
+    # Present but unsigned: sign the server's exact bytes. A regenerated copy
+    # could differ in format/whitespace and fail to verify against what's
+    # actually published, so fetch the canonical file first.
+    if ! http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
+                       --netrc-file "$NETRC" -o "$csfile" "$url.$ext"; then
+      echo "error: failed to fetch existing $url.$ext to sign" >&2
+      return 1
+    fi
+    # Never certify a checksum we haven't validated: signing a corrupt legacy
+    # checksum would upgrade an integrity bug into an authenticity claim made
+    # by our key. Compare against the artifact already on disk. First-token
+    # parse tolerates "digest  filename" layouts; tolower tolerates uppercase
+    # hex.
+    expected="$("$sumcmd" "$filepath" | awk '{print $1}')" || expected=""
+    actual="$(awk '{print tolower($1); exit}' "$csfile")" || actual=""
+    # Reject empty values before comparing: set -e is suppressed in this
+    # function (callers use `if !`), so a failed sumcmd or an empty/garbled
+    # server file would otherwise yield "" == "" and certify junk.
+    if [ -z "$expected" ] || [ -z "$actual" ]; then
+      echo "error: could not compute/parse $ext checksum for validation (computed='$expected' server='$actual')" >&2
+      return 1
+    fi
+    if [ "$expected" != "$actual" ]; then
+      echo "error: server $ext checksum does not match artifact (server=$actual computed=$expected); refusing to sign" >&2
+      return 1
+    fi
+  fi
+
+  if [ "$sig_state" != 0 ]; then
+    if ! gpg_sign "$csfile"; then
+      echo "error: failed to sign $ext checksum" >&2
+      return 1
+    fi
+    to_upload+=("$ext.asc")
+  fi
 }
 
 echo "Importing GPG key into $GNUPGHOME ..."
@@ -264,6 +339,7 @@ skipped=0
 failed=0
 deferred=0
 last_uploaded=""
+last_uploaded_exts=""
 deferred_file="$WORKDIR/deferred.txt"
 failed_file="$WORKDIR/failed.txt"
 : > "$deferred_file"
@@ -283,12 +359,25 @@ while IFS= read -r relpath; do
   echo ""
   echo "=== $relpath ==="
 
-  asc_state=0; md5_state=0; sha1_state=0
+  # Signature of the artifact, and the checksums of that signature.
+  asc_state=0; ascmd5_state=0; ascsha1_state=0
   url_exists "$url.asc"      || asc_state=$?
-  url_exists "$url.asc.md5"  || md5_state=$?
-  url_exists "$url.asc.sha1" || sha1_state=$?
+  url_exists "$url.asc.md5"  || ascmd5_state=$?
+  url_exists "$url.asc.sha1" || ascsha1_state=$?
 
-  if [ "$asc_state" = 2 ] || [ "$md5_state" = 2 ] || [ "$sha1_state" = 2 ]; then
+  # Artifact checksums, and the detached signature of each.
+  md5_state=0; sha1_state=0; sha256_state=0
+  md5asc_state=0; sha1asc_state=0; sha256asc_state=0
+  url_exists "$url.md5"        || md5_state=$?
+  url_exists "$url.sha1"       || sha1_state=$?
+  url_exists "$url.sha256"     || sha256_state=$?
+  url_exists "$url.md5.asc"    || md5asc_state=$?
+  url_exists "$url.sha1.asc"   || sha1asc_state=$?
+  url_exists "$url.sha256.asc" || sha256asc_state=$?
+
+  if [ "$asc_state" = 2 ]    || [ "$ascmd5_state" = 2 ]  || [ "$ascsha1_state" = 2 ] \
+  || [ "$md5_state" = 2 ]    || [ "$sha1_state" = 2 ]    || [ "$sha256_state" = 2 ] \
+  || [ "$md5asc_state" = 2 ] || [ "$sha1asc_state" = 2 ] || [ "$sha256asc_state" = 2 ]; then
     echo "warn: HEAD probe unreliable; deferring (rerun to retry)"
     echo "$relpath" >> "$deferred_file"
     deferred=$((deferred + 1))
@@ -308,8 +397,10 @@ while IFS= read -r relpath; do
   fi
   consecutive_defers=0
 
-  if [ "$asc_state" = 0 ] && [ "$md5_state" = 0 ] && [ "$sha1_state" = 0 ]; then
-    echo "Signature already present; skipping."
+  if [ "$asc_state" = 0 ]    && [ "$ascmd5_state" = 0 ]  && [ "$ascsha1_state" = 0 ] \
+  && [ "$md5_state" = 0 ]    && [ "$sha1_state" = 0 ]    && [ "$sha256_state" = 0 ] \
+  && [ "$md5asc_state" = 0 ] && [ "$sha1asc_state" = 0 ] && [ "$sha256asc_state" = 0 ]; then
+    echo "Signatures and checksums already present; skipping."
     skipped=$((skipped + 1))
     continue
   fi
@@ -359,9 +450,7 @@ while IFS= read -r relpath; do
       continue
     fi
 
-    if ! printf '%s' "$GPG_PASSPHRASE" \
-         | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
-               --detach-sign --armor "$filepath"; then
+    if ! gpg_sign "$filepath"; then
       echo "error: sign failed: $filename" >&2
       echo "$relpath" >> "$failed_file"
       failed=$((failed + 1))
@@ -370,14 +459,38 @@ while IFS= read -r relpath; do
     fi
   fi
 
-  md5sum  "$asc_path" | awk '{print $1}' > "$asc_path.md5"
-  sha1sum "$asc_path" | awk '{print $1}' > "$asc_path.sha1"
+  # A regenerated .asc has brand-new bytes (GPG signatures are
+  # non-deterministic), so any .asc.md5/.asc.sha1 already on the server
+  # describe a previous signature — e.g. left behind when an earlier run
+  # uploaded the sidecars but the .asc PUT itself failed. Treat them as dirty
+  # and regenerate + re-upload both alongside the new .asc.
+  if [ "$asc_state" != 0 ]; then
+    ascmd5_state=1
+    ascsha1_state=1
+  fi
 
-  # Build the list of missing extensions to upload.
+  # Build the upload list as each sidecar is produced. Initialise it here so
+  # prepare_checksum (below) can append to it.
   to_upload=()
-  [ "$asc_state"  != 0 ] && to_upload+=("asc")
-  [ "$md5_state"  != 0 ] && to_upload+=("asc.md5")
-  [ "$sha1_state" != 0 ] && to_upload+=("asc.sha1")
+  [ "$asc_state"     != 0 ] && to_upload+=("asc")
+  [ "$ascmd5_state"  != 0 ] && to_upload+=("asc.md5")
+  [ "$ascsha1_state" != 0 ] && to_upload+=("asc.sha1")
+
+  # Checksums of the artifact's .asc signature (Maven-style bare digest).
+  [ "$ascmd5_state"  != 0 ] && md5sum  "$asc_path" | awk '{print $1}' > "$asc_path.md5"
+  [ "$ascsha1_state" != 0 ] && sha1sum "$asc_path" | awk '{print $1}' > "$asc_path.sha1"
+
+  # Artifact checksums (.md5/.sha1/.sha256) and a detached signature of each.
+  # Each call generates or fetches the checksum, signs it when the signature is
+  # missing, and appends whatever needs uploading to to_upload.
+  if ! prepare_checksum md5    md5sum    "$md5_state"    "$md5asc_state" \
+    || ! prepare_checksum sha1   sha1sum   "$sha1_state"   "$sha1asc_state" \
+    || ! prepare_checksum sha256 sha256sum "$sha256_state" "$sha256asc_state"; then
+    echo "$relpath" >> "$failed_file"
+    failed=$((failed + 1))
+    rm -rf "$iterdir"
+    continue
+  fi
 
   if [ "$APPLY" != "true" ]; then
     for ext in "${to_upload[@]}"; do
@@ -402,6 +515,7 @@ while IFS= read -r relpath; do
   if [ "$upload_failed" = "0" ]; then
     processed=$((processed + 1))
     last_uploaded="$relpath"
+    last_uploaded_exts="${to_upload[*]}"
   else
     echo "$relpath" >> "$failed_file"
     failed=$((failed + 1))
@@ -425,22 +539,75 @@ if [ -s "$failed_file" ]; then
   sed 's/^/  - /' "$failed_file"
 fi
 
-# Post-upload sanity check: fetch the most recently signed pair back from the
-# server and verify it. Catches "wrong key imported" / "uploads silently
-# corrupted" before the operator declares victory.
+# Post-upload sanity check: re-fetch exactly the files this run uploaded for
+# the most recently processed artifact and verify each one — signatures via
+# gpg --verify against their subject, checksums by recomputing the subject's
+# digest. Catches truncated/corrupted uploads and signature-subject mismatches
+# before the operator declares victory, including runs that only uploaded
+# checksums. It does NOT catch "wrong key imported": gpg --verify runs against
+# the same throwaway keyring the signature was made with, so any successfully
+# imported key verifies its own signatures.
 if [ "$APPLY" = "true" ] && [ -n "$last_uploaded" ]; then
   echo ""
-  echo "Verifying uploaded signature: $last_uploaded"
+  echo "Verifying uploaded files for: $last_uploaded ($last_uploaded_exts)"
   verify_dir="$(mktemp -d -p "$WORKDIR")"
   url="$ARTIFACTORY_URL/$last_uploaded"
-  if http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
-       --netrc-file "$NETRC" -o "$verify_dir/artifact" "$url" \
-  && http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
-       --netrc-file "$NETRC" -o "$verify_dir/artifact.asc" "$url.asc" \
-  && gpg --verify "$verify_dir/artifact.asc" "$verify_dir/artifact"; then
+  verify_failures=0
+
+  # Fetch $url$1 into the verify dir once; $1 is the suffix ("" = artifact).
+  # Subjects of a signature/checksum may pre-date this run, so files outside
+  # $last_uploaded_exts get fetched on demand too.
+  vfetch() {
+    local out="$verify_dir/artifact$1"
+    [ -s "$out" ] || http_retry curl -fsSL --max-time "$TIMEOUT_DOWNLOAD" \
+                       --netrc-file "$NETRC" -o "$out" "$url$1"
+  }
+  vfail() {
+    echo "error: post-upload verification failed: $1" >&2
+    verify_failures=$((verify_failures + 1))
+  }
+
+  if ! vfetch ""; then
+    vfail "could not fetch artifact"
+  else
+    for ext in $last_uploaded_exts; do
+      case "$ext" in
+        asc)
+          { vfetch ".asc" \
+            && gpg --batch --verify "$verify_dir/artifact.asc" "$verify_dir/artifact"; } \
+            || vfail ".asc does not verify against the artifact" ;;
+        md5|sha1|sha256)
+          if vfetch ".$ext"; then
+            expected="$("${ext}sum" "$verify_dir/artifact" | awk '{print $1}')"
+            actual="$(awk '{print tolower($1); exit}' "$verify_dir/artifact.$ext")"
+            [ "$expected" = "$actual" ] || vfail ".$ext does not match the artifact digest"
+          else
+            vfail "could not fetch .$ext"
+          fi ;;
+        md5.asc|sha1.asc|sha256.asc)
+          base=".${ext%.asc}"
+          { vfetch "$base" && vfetch ".$ext" \
+            && gpg --batch --verify "$verify_dir/artifact.$ext" "$verify_dir/artifact$base"; } \
+            || vfail ".$ext does not verify against $base" ;;
+        asc.md5|asc.sha1)
+          algo="${ext#asc.}"
+          if vfetch ".asc" && vfetch ".$ext"; then
+            expected="$("${algo}sum" "$verify_dir/artifact.asc" | awk '{print $1}')"
+            actual="$(awk '{print tolower($1); exit}' "$verify_dir/artifact.$ext")"
+            [ "$expected" = "$actual" ] || vfail ".$ext does not match the .asc digest"
+          else
+            vfail "could not fetch .asc / .$ext"
+          fi ;;
+        *)
+          vfail "unknown extension in upload set: .$ext" ;;
+      esac
+    done
+  fi
+
+  if [ "$verify_failures" = 0 ]; then
     echo "Verification OK."
   else
-    echo "error: post-upload verification FAILED for $last_uploaded" >&2
+    echo "error: post-upload verification FAILED for $last_uploaded ($verify_failures problem(s))" >&2
     exit 1
   fi
 fi

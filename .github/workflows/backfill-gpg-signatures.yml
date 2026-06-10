@@ -16,7 +16,7 @@ on:
         type: string
         default: 'https://openmrs.jfrog.io/artifactory'
       apply:
-        description: 'Actually upload signatures (unchecked = dry run)'
+        description: 'Actually upload signatures and checksums (unchecked = dry run)'
         type: boolean
         default: false
 
