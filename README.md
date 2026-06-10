@@ -50,6 +50,8 @@ jobs:
 
 - **Branch-protection bypass:** unlike an admin PAT, a GitHub App token does **not** bypass branch protection / rulesets
   implicitly. The module release App must be added to each target repo's ruleset **bypass list**.
+- **App credentials are all-or-nothing:** supply both `APP_ID` and `APP_PRIVATE_KEY` or neither. Supplying only one (e.g.
+  a typo in a secret name) fails the run, rather than silently falling back to the PAT.
 - **Cross-repo scope:** the distro and dashboard tokens are minted scoped to the target repo (`owner` + `repositories`),
   so those Apps must be installed on the target repo even when the workflow runs elsewhere.
 - **`github.token` is a repo-local safety net only:** it cannot bypass branch protection or act across repositories. The
@@ -58,8 +60,9 @@ jobs:
   App credentials nor the legacy PAT are provided.
 - **Dashboard sync is org-scoped:** `owasp-dependency-check` only syncs the report to the dashboard repo on
   `push`/`workflow_dispatch` events in the `openmrs` org, so forks run the scan without needing dashboard credentials.
-- **Token lifetime:** App installation tokens expire after one hour. For a backend release that runs longer than that
-  before pushing its release commit/tag, prefer the legacy PAT until the release can re-mint the token closer to the push.
+- **Token lifetime:** App installation tokens expire after one hour. A backend release pushes its commit/tag during
+  `release:prepare` — well before the longer `release:perform` deploy — so the token is normally used long before it
+  expires. For an unusually long pre-push build, use the legacy PAT, which does not expire.
 
 ## OWASP Dependency-Check
 
