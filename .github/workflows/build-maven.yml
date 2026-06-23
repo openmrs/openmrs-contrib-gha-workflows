@@ -1,13 +1,13 @@
-name: Build OpenMRS Maven Module
+name: Build Maven Project
 
 on:
   workflow_call:
     inputs:
       java_versions:
-        description: 'Java versions to build against (e.g. [8, 11, 17]). If omitted, inferred from the OpenMRS platform dependency in pom.xml.'
+        description: 'Java versions to build against (e.g. [8, 11, 17]). If omitted, defaults to the Java version inferred from the Maven compiler settings in pom.xml.'
         type: string
       main_java_version:
-        description: 'Java version for publishing artifacts (must be in java_versions). If omitted, inferred from Maven compiler settings, or defaults to the minimum of java_versions.'
+        description: 'Java version for publishing artifacts (must be in java_versions). If omitted, inferred from Maven compiler settings.'
         type: string
       java_distribution:
         description: 'Java distribution'
@@ -73,23 +73,24 @@ jobs:
           main_java_version: ${{ inputs.main_java_version }}
           snapshot_server_id: ${{ inputs.maven_server_id }}
 
-      - name: Validate Java versions
+      - name: Resolve Java versions
         id: params
         env:
           JAVA_VERSIONS: ${{ steps.infer.outputs.java_versions }}
           MAIN_JAVA_VERSION: ${{ steps.infer.outputs.main_java_version }}
         run: |
-          if [ -z "$JAVA_VERSIONS" ]; then
-            echo "::error::java_versions could not be determined. Provide it explicitly or ensure pom.xml has an OpenMRS platform dependency."
-            exit 1
-          fi
-          echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
-
           if [ -z "$MAIN_JAVA_VERSION" ]; then
-            echo "::error::main_java_version could not be determined. Provide it explicitly or ensure pom.xml has compiler settings or an OpenMRS platform dependency."
+            echo "::error::Java version could not be determined. Provide java_versions/main_java_version explicitly or ensure pom.xml has Maven compiler settings."
             exit 1
           fi
           echo "main_java_version=$MAIN_JAVA_VERSION" >> "$GITHUB_OUTPUT"
+
+          # With no OpenMRS platform dependency to imply a version matrix,
+          # build against the single compiler-target Java version by default.
+          if [ -z "$JAVA_VERSIONS" ]; then
+            JAVA_VERSIONS="[$MAIN_JAVA_VERSION]"
+          fi
+          echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
 
       - name: Resolve deploy parameters
         id: deploy
@@ -135,32 +136,6 @@ jobs:
           maven_args: ${{ inputs.maven_args }}
           is_main_java: ${{ matrix.java == fromJSON(needs.prepare.outputs.main_java_version) }}
           upload_coverage: ${{ inputs.upload_coverage }}
-
-      - name: Get OMOD file Name
-        id: get_omod_name
-        run: echo "final_name=$(mvn help:evaluate -Dexpression=project.build.finalName -q -DforceStdout -pl omod)" >> "$GITHUB_OUTPUT"
-
-      - name: Generate checksums for OMOD
-        if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)
-        run: |
-
-          set -euo pipefail
-
-          FILE="omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod"
-
-          sha1sum   "$FILE" | awk '{print $1}' > "$FILE.sha1"
-          sha256sum "$FILE" | awk '{print $1}' > "$FILE.sha256"
-
-      - name: Upload OMOD + checksums
-        if: matrix.java == fromJSON(needs.prepare.outputs.main_java_version)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.get_omod_name.outputs.final_name }}
-          path: |
-            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod
-            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha1
-            omod/target/${{ steps.get_omod_name.outputs.final_name }}.omod.sha256
-          if-no-files-found: error
 
   deploy:
     name: Deploy SNAPSHOT to Maven

@@ -1,0 +1,43 @@
+name: Maven Deploy
+description: >
+  Set up Java with Maven server credentials and deploy artifacts to the
+  configured repository. Shared by the Maven build workflows; the calling
+  job must check out the repository first.
+
+inputs:
+  java_version:
+    description: 'Java version to deploy with'
+    required: true
+  java_distribution:
+    description: 'Java distribution'
+    required: false
+    default: 'temurin'
+  server_id:
+    description: 'Maven server ID to deploy to'
+    required: true
+  maven_repo_username:
+    description: 'Maven repository username'
+    required: true
+  maven_repo_api_key:
+    description: 'Maven repository API key / password'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java ${{ inputs.java_version }}
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: ${{ inputs.java_distribution }}
+        cache: maven
+        server-id: ${{ inputs.server_id }}
+        server-username: MAVEN_REPO_USERNAME
+        server-password: MAVEN_REPO_API_KEY
+
+    - name: Deploy to Maven
+      shell: bash
+      env:
+        MAVEN_REPO_USERNAME: ${{ inputs.maven_repo_username }}
+        MAVEN_REPO_API_KEY: ${{ inputs.maven_repo_api_key }}
+      run: mvn --batch-mode deploy -DskipTests

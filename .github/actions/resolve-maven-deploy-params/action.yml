@@ -1,0 +1,87 @@
+name: Resolve Maven Deploy Parameters
+description: >
+  Resolve the SNAPSHOT-deployment parameters shared by the Maven build
+  workflows: the snapshot server ID, whether the project version is a
+  SNAPSHOT, and the set of branches that trigger SNAPSHOT deployment.
+
+inputs:
+  project_version:
+    description: 'POM project version (used for SNAPSHOT detection and version-branch gating)'
+    required: true
+  inferred_snapshot_server_id:
+    description: 'Snapshot server ID inferred from the POM, if any'
+    required: false
+    default: ''
+  default_snapshot_server_id:
+    description: 'Fallback snapshot server ID when none is inferred or provided'
+    required: false
+    default: 'openmrs-repo-snapshots'
+  deploy_branch:
+    description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment. If empty, auto-detected.'
+    required: false
+    default: ''
+  ref_name:
+    description: 'The branch ref name of the running workflow (github.ref_name)'
+    required: true
+
+outputs:
+  snapshot_server_id:
+    description: 'Resolved snapshot server ID'
+    value: ${{ steps.server.outputs.snapshot_id }}
+  is_snapshot:
+    description: 'Whether project_version is a SNAPSHOT ("true"/"false")'
+    value: ${{ steps.snapshot.outputs.is_snapshot }}
+  deploy_branches:
+    description: 'JSON array of branches that trigger SNAPSHOT deployment'
+    value: ${{ steps.deploy.outputs.branches }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Maven server ID
+      id: server
+      shell: bash
+      env:
+        INFERRED_ID: ${{ inputs.inferred_snapshot_server_id }}
+        DEFAULT_ID: ${{ inputs.default_snapshot_server_id }}
+      run: |
+        echo "snapshot_id=${INFERRED_ID:-$DEFAULT_ID}" >> "$GITHUB_OUTPUT"
+
+    - name: Check if project version is a SNAPSHOT
+      id: snapshot
+      shell: bash
+      env:
+        POM_VERSION: ${{ inputs.project_version }}
+      run: |
+        if [[ "$POM_VERSION" == *-SNAPSHOT ]]; then
+          echo "is_snapshot=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "is_snapshot=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Resolve deploy branches
+      id: deploy
+      shell: bash
+      env:
+        INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
+        REF_NAME: ${{ inputs.ref_name }}
+        POM_VERSION: ${{ inputs.project_version }}
+      run: |
+        if [ -n "$INPUT_DEPLOY_BRANCH" ]; then
+          if echo "$INPUT_DEPLOY_BRANCH" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            echo "branches=$INPUT_DEPLOY_BRANCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "branches=$(jq -nc --arg v "$INPUT_DEPLOY_BRANCH" '[$v]')" >> "$GITHUB_OUTPUT"
+          fi
+        else
+          # Auto-detect: main, master, and version branches (e.g. 3.x, 2.8.x)
+          # Version branches are only added if the POM version matches the branch prefix
+          BRANCHES='["main", "master"]'
+          if echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
+            PREFIX="${REF_NAME%.x}."
+            if [[ "$POM_VERSION" == "$PREFIX"* ]]; then
+              BRANCHES=$(echo "$BRANCHES" | jq -c --arg b "$REF_NAME" '. + [$b]')
+            fi
+          fi
+          echo "branches=$BRANCHES" >> "$GITHUB_OUTPUT"
+        fi

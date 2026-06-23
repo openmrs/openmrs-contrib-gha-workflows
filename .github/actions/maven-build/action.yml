@@ -1,0 +1,70 @@
+name: Maven Build
+description: >
+  Set up Java, run the Maven build (with deployment skipped), and upload
+  JaCoCo coverage to Codecov. Shared by the Maven build workflows; the
+  calling job must check out the repository first and, to enable the
+  Codecov OIDC upload, declare `id-token: write` permission.
+
+inputs:
+  java_version:
+    description: 'Java version to build against'
+    required: true
+  java_distribution:
+    description: 'Java distribution'
+    required: false
+    default: 'temurin'
+  maven_args:
+    description: 'Maven arguments / goals'
+    required: false
+    default: 'clean install'
+  is_main_java:
+    description: 'Whether this is the main Java version (gates the coverage upload) ("true"/"false")'
+    required: false
+    default: 'false'
+  upload_coverage:
+    description: 'Force coverage upload on/off. If empty, uploads when JaCoCo reports are found.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java ${{ inputs.java_version }}
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        java-version: ${{ inputs.java_version }}
+        distribution: ${{ inputs.java_distribution }}
+        cache: maven
+
+    - name: Build with Maven
+      shell: bash
+      env:
+        MVN_GOALS: ${{ inputs.maven_args }}
+      run: |
+        # shellcheck disable=SC2086 # MVN_GOALS intentionally word-split
+        mvn --batch-mode $MVN_GOALS -Dmaven.deploy.skip
+
+    - name: Check for JaCoCo coverage reports
+      id: jacoco
+      if: inputs.is_main_java == 'true'
+      shell: bash
+      env:
+        UPLOAD_COVERAGE: ${{ inputs.upload_coverage }}
+      run: |
+        VALUE=$(echo "$UPLOAD_COVERAGE" | tr '[:upper:]' '[:lower:]')
+        if [ "$VALUE" = "true" ]; then
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+        elif [ "$VALUE" = "false" ]; then
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+        elif find . -name 'jacoco.xml' -print -quit 2>/dev/null | grep -q .; then
+          echo "upload=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "upload=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Upload coverage to Codecov
+      if: steps.jacoco.outputs.upload == 'true'
+      uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+      continue-on-error: true
+      with:
+        use_oidc: true
