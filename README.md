@@ -111,3 +111,19 @@ When updating `.github/resources/owasp/dependency-check-suppressions.xml`, keep 
   false positive before merging.
 
 Read more: https://dependency-check.github.io/DependencyCheck/general/suppression.html
+
+## Dependency updates and smoke testing
+
+[Dependabot](.github/dependabot.yml) opens a grouped, weekly pull request that bumps the pinned action SHAs across both
+the reusable workflows (`.github/workflows`) and the composite actions (`.github/actions`).
+
+Because the actions here only ever run when consuming repositories invoke them, a regression in a bumped action (for
+example a new major `actions/checkout`) would otherwise surface downstream rather than in this repo. The
+[smoke-test workflow](.github/workflows/smoke-test.yml) guards against that: on every pull request it runs the inference
+scripts' unit tests and lint, then drives the shared `maven-build` / `infer-backend-params` / `infer-frontend-params`
+actions against tiny throwaway projects under [`.github/tests/fixtures`](.github/tests/fixtures). Reusing the same composite actions the
+production workflows call keeps the smoke test from drifting away from real consumer behaviour.
+
+This covers the build-path actions — `checkout`, `setup-java`, `setup-node`, `cache`, and `upload-artifact`. Actions
+that require org secrets or external services (the SNAPSHOT/release deploys, Transifex sync, the GitHub App token, and
+the Codecov upload) are **not** smoke-tested and should be reviewed manually when their pins change.

@@ -1,0 +1,123 @@
+name: Smoke Test
+
+# Validates the shared building blocks of this repo against tiny in-repo
+# fixtures so that Dependabot bumps to the actions they use (checkout,
+# setup-java, setup-node, cache, upload-artifact) and edits to the shared
+# composite actions / inference scripts are exercised before merge.
+#
+# It deliberately reuses the same composite actions the production reusable
+# workflows call (infer-backend-params, maven-build, infer-frontend-params)
+# rather than re-implementing them, to keep the smoke test from drifting away
+# from what consumers actually run. Pieces that need org secrets or external
+# services (SNAPSHOT/release deploys, Transifex, the GitHub App token, Codecov
+# OIDC) are out of scope and cannot be smoke-tested here.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scripts:
+    name: Inference scripts (unit tests + lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Run unit tests
+        run: python3 -m unittest discover -s .github/tests -p 'test_*.py'
+
+      - name: Lint with ruff
+        run: pipx run --spec ruff==0.11.2 ruff check .github/scripts .github/tests
+
+  backend:
+    name: Backend build (maven-build action)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out shared actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: .gha-workflows
+
+      - name: Stage backend fixture as the project root
+        run: cp -a .gha-workflows/.github/tests/fixtures/backend/. .
+
+      - name: Infer backend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-backend-params
+        with:
+          # The fixture has no OpenMRS platform dependency to infer from, so the
+          # Java versions are supplied explicitly; inference still runs (and is
+          # exercised) for project version and server IDs.
+          java_versions: '[17]'
+          main_java_version: '17'
+
+      - name: Build with Maven
+        uses: ./.gha-workflows/.github/actions/maven-build
+        with:
+          java_version: '17'
+          maven_args: 'clean install'
+          is_main_java: 'true'
+          upload_coverage: 'false'
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-backend
+          path: target/*.jar
+          if-no-files-found: error
+
+  frontend:
+    name: Frontend build (infer-frontend-params action)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out shared actions
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: .gha-workflows
+
+      - name: Stage frontend fixture as the project root
+        run: cp -a .gha-workflows/.github/tests/fixtures/frontend/. .
+
+      - name: Infer frontend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ steps.params.outputs.node_version }}
+          cache: 'yarn'
+
+      - name: Cache node_modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build
+        run: ${{ steps.params.outputs.build_command }}
+
+      - name: Verify
+        run: ${{ steps.params.outputs.verify_command }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-frontend
+          path: ${{ steps.params.outputs.artifact_path }}
+          if-no-files-found: error

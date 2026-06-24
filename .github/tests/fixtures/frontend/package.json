@@ -1,0 +1,13 @@
+{
+  "name": "smoke-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "yarn@4.9.1",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node ./build.mjs",
+    "verify": "node ./verify.mjs"
+  }
+}

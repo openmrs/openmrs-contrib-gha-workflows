@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!--
+    Minimal, dependency-free Maven project used only by the smoke-test workflow
+    to exercise the shared maven-build / infer-backend-params actions (and the
+    Java setup + artifact upload they rely on). It is deliberately NOT a real
+    OpenMRS module: keeping it free of OpenMRS dependencies makes the smoke test
+    fast and immune to upstream-repo flakiness, so a failure points at a bumped
+    action rather than at OpenMRS infrastructure.
+  -->
+  <groupId>org.openmrs.contrib.smoketest</groupId>
+  <artifactId>smoke-backend</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+</project>

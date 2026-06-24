@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Keeps the pinned action SHAs current across both the reusable workflows in
+  # .github/workflows and the composite actions in .github/actions. The
+  # smoke-test workflow exercises a bumped action before the grouped PR merges.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci
