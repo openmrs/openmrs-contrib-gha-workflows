@@ -98,12 +98,6 @@ jobs:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
 
-      - name: Enable Corepack
-        # Production consumers commit a Yarn release and resolve it via yarnPath;
-        # the fixture pins Yarn through the packageManager field instead, so
-        # Corepack must be enabled for the Berry `--immutable` install to work.
-        run: corepack enable
-
       - name: Cache node_modules
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
