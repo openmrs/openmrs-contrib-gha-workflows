@@ -168,14 +168,14 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           ref: ${{ steps.branch.outputs.name }}
           token: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
 
       - name: Checkout release scripts
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: openmrs/openmrs-contrib-bamboo
           path: release-scripts
@@ -183,7 +183,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Checkout inference action
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.job_workflow_sha }}
@@ -244,7 +244,7 @@ jobs:
           echo "Computed release tag name: $TAG_NAME"
 
       - name: Set up Java ${{ steps.java.outputs.version }}
-        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
         with:
           java-version: ${{ steps.java.outputs.version }}
           distribution: ${{ inputs.java_distribution }}
@@ -353,13 +353,13 @@ jobs:
           REPO: ${{ github.repository }}
 
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           ref: refs/tags/${{ needs.release.outputs.tag_name }}
 
       - name: Create Release Notes
-        uses: openmrs/openmrs-contrib-create-release-notes@aa823dd951f06f4637c22e25a0283b929b505d23 # v1.0.3
+        uses: openmrs/openmrs-contrib-create-release-notes@1c10a54f5f7a0500860f59640fe7e31bbd428def # v2.0.0
         id: create-release-notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -367,7 +367,7 @@ jobs:
           head-ref: refs/tags/${{ needs.release.outputs.tag_name }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
           name: ${{ inputs.release_version }}
