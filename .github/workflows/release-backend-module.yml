@@ -77,6 +77,7 @@ jobs:
       contents: write
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
+      base_ref: ${{ steps.prev.outputs.base_ref }}
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
@@ -243,6 +244,30 @@ jobs:
           echo "- **Release Tag:** \`$TAG_NAME\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Computed release tag name: $TAG_NAME"
 
+          # The prefix shared by every release tag of this artifact: the tag
+          # format with the artifactId substituted and everything from the
+          # version placeholder onward dropped. Used to find this artifact's
+          # prior releases without matching other artifacts in the repo.
+          PREFIX="$TAG_FORMAT"
+          PREFIX="${PREFIX//@\{project.artifactId\}/$ARTIFACT_ID}"
+          PREFIX="${PREFIX%%@\{project.version\}*}"
+          echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve previous release tag
+        id: prev
+        env:
+          TAG_PREFIX: ${{ steps.tag.outputs.prefix }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          # Pick the comparison base for release notes: this artifact's latest
+          # stable release older than the one being cut. Passing it explicitly
+          # keeps create-release-notes from defaulting to the repo-wide latest
+          # release, which may belong to another active line (e.g. a 3.x tag
+          # while cutting 2.5.4 from the 2.x branch). Empty output is fine — the
+          # action then falls back to its default behavior.
+          git tag --list "${TAG_PREFIX}*" \
+            | python3 .gha-workflows/.github/scripts/select_previous_release.py
+
       - name: Set up Java ${{ steps.java.outputs.version }}
         uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
         with:
@@ -359,12 +384,13 @@ jobs:
           ref: refs/tags/${{ needs.release.outputs.tag_name }}
 
       - name: Create Release Notes
-        uses: openmrs/openmrs-contrib-create-release-notes@1c10a54f5f7a0500860f59640fe7e31bbd428def # v2.0.0
+        uses: openmrs/openmrs-contrib-create-release-notes@6b8ad87592ae0bdbcbfde8d740493d6f34bc8e97 # v2.1.0
         id: create-release-notes
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           head-ref: refs/tags/${{ needs.release.outputs.tag_name }}
+          base-ref: ${{ needs.release.outputs.base_ref && format('refs/tags/{0}', needs.release.outputs.base_ref) || '' }}
 
       - name: Create Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
