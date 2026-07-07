@@ -88,7 +88,8 @@ jobs:
       contents: read          # read-only: the hard guarantee that no code is pushed
       pull-requests: write     # read the PR/diff and post the review
       issues: write            # a PR conversation comment posts via the issues API
-      id-token: write          # claude-code-action fetches an OIDC token on startup
+      # No id-token: write — we deliberately do NOT use the OIDC/Claude-App path
+      # (see github_token/allowed_non_write_users on the Review step below).
     steps:
       # Fail-closed dev-stage gate: the commenter must be an active member of one
       # of the reviewer teams.
@@ -142,8 +143,8 @@ jobs:
           grep -q "name: pr-review" "$dest"
           echo "Fetched pr-review skill ($(wc -l < "$dest") lines)."
 
-      # Snapshot how much claude[bot] has already posted on this PR, so the step
-      # after the review can tell whether this run posted anything new.
+      # Snapshot how much github-actions[bot] has already posted on this PR, so
+      # the step after the review can tell whether this run posted anything new.
       - name: Snapshot bot review activity
         id: pre
         if: steps.gate.outputs.allowed == 'true'
@@ -152,9 +153,9 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.issue.number }}
         run: |
-          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
-          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
-          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
+          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
+          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
           echo "count=$((r + c + i))" >> "$GITHUB_OUTPUT"
 
       - name: Review
@@ -170,6 +171,15 @@ jobs:
           # Off by default; set input show_full_output: true on a caller to audit
           # what the review actually verified (e.g. why a PR was deemed clean).
           show_full_output: ${{ inputs.show_full_output }}
+          # Authorize via our own dev-stage gate, NOT the Claude GitHub App.
+          # Supplying github_token makes the action post with this token
+          # (github-actions[bot]) instead of exchanging OIDC for an App token —
+          # that exchange requires the commenter to have repo WRITE access, which
+          # would lock out /dev/3+ contributors who don't have it. Because the gate
+          # step above already restricts who reaches here, allowed_non_write_users
+          # "*" means "anyone our gate approved", not "anyone on the internet".
+          github_token: ${{ github.token }}
+          allowed_non_write_users: "*"
           # No trigger_phrase: supplying `prompt` selects automation mode. The
           # methodology comes from the pr-review skill, injected as a system
           # prompt via --append-system-prompt-file (skills are not reliably
@@ -221,9 +231,9 @@ jobs:
           BEFORE: ${{ steps.pre.outputs.count }}
         run: |
           sleep 10   # let GitHub's read side catch up with anything just posted
-          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
-          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
-          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
+          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
+          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="github-actions[bot]")]|length')
           after=$((r + c + i))
           if [ "$after" -le "${BEFORE:-0}" ]; then
             echo "No new claude[bot] activity — clean review; adding 👍 to comment $COMMENT_ID."
