@@ -22,7 +22,6 @@
 #         contents: read
 #         pull-requests: write
 #         issues: write
-#         id-token: write
 #
 # Pin `@main` to a tag or commit SHA to control when methodology/behaviour changes
 # reach your repo. Override any input (e.g. model/effort) via `with:` if needed.
