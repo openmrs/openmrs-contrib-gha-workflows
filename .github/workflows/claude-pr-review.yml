@@ -138,7 +138,23 @@ jobs:
           grep -q "name: pr-review" "$dest"
           echo "Fetched pr-review skill ($(wc -l < "$dest") lines)."
 
+      # Snapshot how much claude[bot] has already posted on this PR, so the step
+      # after the review can tell whether this run posted anything new.
+      - name: Snapshot bot review activity
+        id: pre
+        if: steps.gate.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+        run: |
+          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          echo "count=$((r + c + i))" >> "$GITHUB_OUTPUT"
+
       - name: Review
+        id: review
         if: steps.gate.outputs.allowed == 'true'
         uses: anthropics/claude-code-action@v1
         env:
@@ -183,3 +199,28 @@ jobs:
             --max-turns ${{ inputs.max_turns }}
             --allowedTools "Bash,Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment"
             --disallowedTools "Write,Edit"
+
+      # A clean review posts nothing, leaving no trace on the PR. Add a 👍 to the
+      # triggering comment so the author knows it ran and found nothing — without
+      # the LGTM-comment noise the skill deliberately avoids. If the review DID
+      # post (new review/comment activity), that is the signal, so no reaction.
+      - name: Acknowledge a clean review with a reaction
+        if: steps.gate.outputs.allowed == 'true' && steps.review.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          BEFORE: ${{ steps.pre.outputs.count }}
+        run: |
+          sleep 10   # let GitHub's read side catch up with anything just posted
+          r=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          c=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          i=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" --paginate --jq '[.[]|select(.user.login=="claude[bot]")]|length')
+          after=$((r + c + i))
+          if [ "$after" -le "${BEFORE:-0}" ]; then
+            echo "No new claude[bot] activity — clean review; adding 👍 to comment $COMMENT_ID."
+            gh api --method POST "repos/$REPO/issues/comments/$COMMENT_ID/reactions" -f content='+1' >/dev/null
+          else
+            echo "Review posted $((after - ${BEFORE:-0})) item(s); the review is the signal, no reaction."
+          fi
