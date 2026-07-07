@@ -59,6 +59,10 @@ on:
         description: 'Job timeout in minutes.'
         type: number
         default: 30
+      show_full_output:
+        description: 'Surface Claude''s full transcript (per-tool denials, and the reasoning behind a clean verdict) in the Actions log, for auditing/diagnostics. Exposes the transcript in the run log (registered secrets stay masked); leave off in steady state.'
+        type: boolean
+        default: false
     secrets:
       ANTHROPIC_API_KEY:
         description: 'Anthropic API key used for the review.'
@@ -163,6 +167,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Off by default; set input show_full_output: true on a caller to audit
+          # what the review actually verified (e.g. why a PR was deemed clean).
+          show_full_output: ${{ inputs.show_full_output }}
           # No trigger_phrase: supplying `prompt` selects automation mode. The
           # methodology comes from the pr-review skill, injected as a system
           # prompt via --append-system-prompt-file (skills are not reliably
