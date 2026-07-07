@@ -45,11 +45,11 @@ on:
       model:
         description: 'Claude model id.'
         type: string
-        default: claude-opus-4-8
+        default: claude-sonnet-5
       effort:
         description: 'Reasoning effort: low | medium | high | xhigh | max.'
         type: string
-        default: max
+        default: medium
       max_turns:
         description: 'Maximum agent turns.'
         type: number
@@ -80,8 +80,8 @@ jobs:
       github.event.comment.user.type != 'Bot' &&
       contains(github.event.comment.body, '@claude review')
     runs-on: ubuntu-latest
-    # Bound cost and stop a hung run. Generous because Opus at max effort plus
-    # the skill's read-based verification take a while.
+    # Bound cost and stop a hung run. Generous because the skill's read-based
+    # verification takes a while (more so at higher model/effort).
     timeout-minutes: ${{ inputs.timeout_minutes }}
     permissions:
       contents: read          # read-only: the hard guarantee that no code is pushed
