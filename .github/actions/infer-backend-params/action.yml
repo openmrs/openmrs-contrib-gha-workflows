@@ -81,14 +81,17 @@ runs:
         # Java versions: normalize to JSON array
         JAVA_VERSIONS="${INPUT_JAVA_VERSIONS:-$INFERRED_JAVA_VERSIONS}"
         if [ -n "$JAVA_VERSIONS" ]; then
-          if echo "$JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
-            echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
-          else
-            echo "java_versions=[$JAVA_VERSIONS]" >> "$GITHUB_OUTPUT"
+          if ! echo "$JAVA_VERSIONS" | jq -e 'type == "array"' > /dev/null 2>&1; then
+            JAVA_VERSIONS="[$JAVA_VERSIONS]"
           fi
+          echo "java_versions=$JAVA_VERSIONS" >> "$GITHUB_OUTPUT"
         fi
 
+        # Main Java version: explicit > inferred > lowest of java_versions.
         MAIN="${INPUT_MAIN_JAVA_VERSION:-$INFERRED_MAIN_JAVA_VERSION}"
+        if [ -z "$MAIN" ] && [ -n "$JAVA_VERSIONS" ]; then
+          MAIN=$(echo "$JAVA_VERSIONS" | jq -r 'min')
+        fi
         if [ -n "$MAIN" ]; then
           echo "main_java_version=$MAIN" >> "$GITHUB_OUTPUT"
         fi
