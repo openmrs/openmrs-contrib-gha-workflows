@@ -1,9 +1,8 @@
 name: Maven Build
 description: >
-  Set up Java, run the Maven build (with deployment skipped), and upload
-  JaCoCo coverage to Codecov. Shared by the Maven build workflows; the
-  calling job must check out the repository first and, to enable the
-  Codecov OIDC upload, declare `id-token: write` permission.
+  Set up Java, run the Maven build (with deployment skipped), and stage any
+  JaCoCo coverage reports as a workflow artifact for the companion
+  upload-coverage workflow.
 
 inputs:
   java_version:
@@ -22,7 +21,7 @@ inputs:
     required: false
     default: 'false'
   upload_coverage:
-    description: 'Force coverage upload on/off. If empty, uploads when JaCoCo reports are found.'
+    description: 'Force staging coverage for upload on/off. If empty, stages when JaCoCo reports are found.'
     required: false
     default: ''
 
@@ -44,27 +43,26 @@ runs:
         # shellcheck disable=SC2086 # MVN_GOALS intentionally word-split
         mvn --batch-mode $MVN_GOALS -Dmaven.deploy.skip
 
-    - name: Check for JaCoCo coverage reports
+    - name: Stage JaCoCo coverage reports
       id: jacoco
       if: inputs.is_main_java == 'true'
       shell: bash
       env:
         UPLOAD_COVERAGE: ${{ inputs.upload_coverage }}
-      run: |
-        VALUE=$(echo "$UPLOAD_COVERAGE" | tr '[:upper:]' '[:lower:]')
-        if [ "$VALUE" = "true" ]; then
-          echo "upload=true" >> "$GITHUB_OUTPUT"
-        elif [ "$VALUE" = "false" ]; then
-          echo "upload=false" >> "$GITHUB_OUTPUT"
-        elif find . -name 'jacoco.xml' -print -quit 2>/dev/null | grep -q .; then
-          echo "upload=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "upload=false" >> "$GITHUB_OUTPUT"
-        fi
+        COVERAGE_DIR: ${{ runner.temp }}/coverage
+        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_HEAD_REF: ${{ github.head_ref }}
+        PUSH_SHA: ${{ github.sha }}
+        PUSH_REF: ${{ github.ref_name }}
+      run: bash "${{ github.action_path }}/../../scripts/stage-coverage.sh"
 
-    - name: Upload coverage to Codecov
-      if: steps.jacoco.outputs.upload == 'true'
-      uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
-      continue-on-error: true
+    - name: Upload coverage reports artifact
+      if: steps.jacoco.outputs.staged == 'true'
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
-        use_oidc: true
+        name: coverage-reports
+        path: ${{ runner.temp }}/coverage
+        if-no-files-found: error
+        retention-days: 1

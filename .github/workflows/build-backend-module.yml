@@ -18,7 +18,7 @@ on:
         type: string
         default: 'clean install'
       upload_coverage:
-        description: 'Upload coverage reports to Codecov. If omitted, uploads when JaCoCo reports are found after the build. Set to "true" or "false" to override.'
+        description: 'Stage JaCoCo reports as a coverage-reports artifact for the upload-coverage workflow to send to Codecov. If omitted, stages when JaCoCo reports are found after the build. Set to "true" or "false" to override.'
         type: string
       deploy_snapshots:
         description: 'Whether to deploy SNAPSHOT artifacts to the Maven repository'
@@ -106,7 +106,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
