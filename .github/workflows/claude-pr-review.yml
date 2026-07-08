@@ -123,7 +123,7 @@ jobs:
       # drift checks). This ref resolves for fork PRs too.
       - name: Check out the PR head
         if: steps.gate.outputs.allowed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ github.event.issue.number }}/head
           fetch-depth: 0
