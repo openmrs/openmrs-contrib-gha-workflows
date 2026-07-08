@@ -53,7 +53,7 @@ on:
       max_turns:
         description: 'Maximum agent turns.'
         type: number
-        default: 40
+        default: 100
       timeout_minutes:
         description: 'Job timeout in minutes.'
         type: number
