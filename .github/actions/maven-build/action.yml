@@ -52,10 +52,6 @@ runs:
         COVERAGE_DIR: ${{ runner.temp }}/coverage
         EVENT_NAME: ${{ github.event_name }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        PR_HEAD_REF: ${{ github.head_ref }}
-        PUSH_SHA: ${{ github.sha }}
-        PUSH_REF: ${{ github.ref_name }}
       run: bash "${{ github.action_path }}/../../scripts/stage-coverage.sh"
 
     - name: Upload coverage reports artifact

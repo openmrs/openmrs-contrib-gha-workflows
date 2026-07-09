@@ -32,30 +32,60 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
+      - name: Warn if coverage artifact is unavailable
+        if: steps.download.outcome != 'success'
+        shell: bash
+        run: echo "::warning::No coverage-reports artifact could be downloaded from the build run; skipping upload."
+
       - name: Read coverage metadata
         id: meta
         if: steps.download.outcome == 'success'
         shell: bash
+        env:
+          # Commit and branch come from the trusted workflow_run payload, never the
+          # fork-controlled artifact, which could otherwise claim main's HEAD.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          META="coverage/codecov-metadata.env"
-          if [ ! -f "$META" ]; then
-            echo "No coverage metadata found; nothing to upload."
+          # Rename fork-controlled report names to safe ones so a comma/newline in
+          # a filename can't break the file list or inject GITHUB_OUTPUT lines.
+          files=""
+          i=0
+          while IFS= read -r -d '' report; do
+            safe="coverage/report-${i}-jacoco.xml"
+            [ "$report" = "$safe" ] || mv "$report" "$safe"
+            files="${files:+$files,}$safe"
+            i=$((i + 1))
+          done < <(find coverage -name '*-jacoco.xml' -print0 | sort -z)
+
+          if [ -z "$files" ]; then
+            echo "No JaCoCo reports staged; nothing to upload."
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Parse the values by hand rather than sourcing the file: this job
-          # runs in the trusted base context and the branch name originates
-          # from an untrusted fork, so it must never be evaluated as shell.
-          commit=$(grep '^COMMIT=' "$META" | cut -d= -f2-)
-          branch=$(grep '^BRANCH=' "$META" | cut -d= -f2-)
-          pr=$(grep '^PR=' "$META" | cut -d= -f2-)
-          files=$(find coverage -name '*-jacoco.xml' -printf '%p,' | sed 's/,$//')
+          # PR number is the only value from the artifact (empty in workflow_run for
+          # fork PRs); require it numeric so it can't inject output/codecov args.
+          pr=""
+          META="coverage/codecov-metadata.env"
+          if [ -f "$META" ]; then
+            pr=$(grep -m1 '^PR=' "$META" | cut -d= -f2- | tr -d '\r\n' || true)
+            [[ "$pr" =~ ^[0-9]*$ ]] || { echo "::error::Invalid PR number in coverage metadata."; exit 1; }
+          fi
+
+          # head_branch is the fork's branch name (could be "main"); namespace forks
+          # as owner:branch so their coverage can't be attributed to a base branch.
+          branch="$HEAD_BRANCH"
+          if [ -n "$HEAD_REPO" ] && [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            branch="${HEAD_REPO%%/*}:$HEAD_BRANCH"
+          fi
 
           {
-            echo "commit=$commit"
+            echo "commit=$HEAD_SHA"
             echo "branch=$branch"
             echo "pr=$pr"
             echo "files=$files"
@@ -65,7 +95,6 @@ jobs:
       - name: Upload to Codecov
         if: steps.meta.outputs.found == 'true'
         uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
-        continue-on-error: true
         with:
           use_oidc: true
           disable_search: true

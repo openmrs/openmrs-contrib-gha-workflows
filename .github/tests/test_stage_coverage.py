@@ -69,11 +69,11 @@ class StageCoverageTestBase(unittest.TestCase):
 class TestGating(StageCoverageTestBase):
     def test_auto_detect_with_reports_stages(self):
         self.write_report(".")
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push", PUSH_SHA="s", PUSH_REF="main")
+        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
         self.assertEqual(self.outputs()["staged"], "true")
 
     def test_auto_detect_without_reports_skips(self):
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push", PUSH_SHA="s", PUSH_REF="main")
+        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
         self.assertEqual(self.outputs()["staged"], "false")
         self.assertFalse(os.path.exists(self.coverage_dir))
 
@@ -88,10 +88,10 @@ class TestGating(StageCoverageTestBase):
         self.run_script(UPLOAD_COVERAGE="FALSE", EVENT_NAME="push")
         self.assertEqual(self.outputs()["staged"], "false")
 
-    def test_force_true_without_reports_stages(self):
-        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push", PUSH_SHA="s", PUSH_REF="main")
-        self.assertEqual(self.outputs()["staged"], "true")
-        self.assertEqual(self.staged_reports(), [])
+    def test_force_true_without_reports_skips(self):
+        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push")
+        self.assertEqual(self.outputs()["staged"], "false")
+        self.assertFalse(os.path.exists(self.coverage_dir))
 
 
 class TestReportNaming(StageCoverageTestBase):
@@ -99,7 +99,7 @@ class TestReportNaming(StageCoverageTestBase):
         self.write_report(".")
         self.write_report("api")
         self.write_report(os.path.join("omod", "sub"))
-        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push", PUSH_SHA="s", PUSH_REF="main")
+        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push")
         self.assertEqual(
             self.staged_reports(),
             ["api-jacoco.xml", "omod-sub-jacoco.xml", "root-jacoco.xml"],
@@ -107,30 +107,15 @@ class TestReportNaming(StageCoverageTestBase):
 
 
 class TestMetadata(StageCoverageTestBase):
-    def test_pull_request_uses_head_details(self):
+    def test_pull_request_records_pr_number(self):
         self.write_report("api")
-        self.run_script(
-            UPLOAD_COVERAGE="",
-            EVENT_NAME="pull_request",
-            PR_NUMBER="16",
-            PR_HEAD_SHA="deadbeef",
-            PR_HEAD_REF="feature/x",
-            PUSH_SHA="ignored",
-            PUSH_REF="ignored",
-        )
-        self.assertEqual(
-            self.metadata(), {"COMMIT": "deadbeef", "BRANCH": "feature/x", "PR": "16"}
-        )
+        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="pull_request", PR_NUMBER="16")
+        self.assertEqual(self.metadata(), {"PR": "16"})
 
-    def test_push_uses_push_details_and_empty_pr(self):
+    def test_push_records_empty_pr(self):
         self.write_report("api")
-        self.run_script(
-            UPLOAD_COVERAGE="",
-            EVENT_NAME="push",
-            PUSH_SHA="cafe",
-            PUSH_REF="main",
-        )
-        self.assertEqual(self.metadata(), {"COMMIT": "cafe", "BRANCH": "main", "PR": ""})
+        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
+        self.assertEqual(self.metadata(), {"PR": ""})
 
 
 if __name__ == "__main__":

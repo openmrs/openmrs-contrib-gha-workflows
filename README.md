@@ -73,8 +73,10 @@ direct upload from that run always fails with `Token required - not valid tokenl
 
 Instead, the actual upload runs in `upload-coverage.yml`, triggered by a [`workflow_run`][workflow-run] event **after**
 the build completes. Because `workflow_run` runs in the base repository's trusted context (OIDC available, `openmrs`
-owner), it can upload coverage on the fork's behalf. The build stashes the commit/branch/PR the coverage belongs to in
-the artifact, and the upload job passes them to Codecov as `override_*` values.
+owner), it can upload coverage on the fork's behalf. The commit and branch reported to Codecov come from the trusted
+`workflow_run` event, not the fork-controlled artifact — a fork branch is namespaced as `owner:branch` so it can never be
+attributed to a base-repo branch. Only the PR number is carried in the artifact (the `workflow_run` payload has none for
+fork PRs) and is validated numeric before use.
 
 A `workflow_run` trigger only fires for a workflow defined in the consuming repo's **default branch**, so it cannot be
 centralised here — each module repo needs a small stub that wires its build workflow to the shared upload workflow:
