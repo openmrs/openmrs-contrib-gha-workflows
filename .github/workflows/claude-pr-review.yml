@@ -41,7 +41,7 @@ on:
       skill_url:
         description: 'Raw URL of the pr-review SKILL.md. Pin to a commit SHA.'
         type: string
-        default: 'https://raw.githubusercontent.com/openmrs/openmrs-module-querystore/a5ea7a9b4640849d31b6adf65f0e5706a3a18666/.claude/skills/pr-review/SKILL.md'
+        default: 'https://raw.githubusercontent.com/openmrs/openmrs-module-querystore/a10faa30cd336bf4246f79addb1674825c0a87f0/.claude/skills/pr-review/SKILL.md'
       model:
         description: 'Claude model id.'
         type: string
