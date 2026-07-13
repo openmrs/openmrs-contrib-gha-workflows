@@ -80,7 +80,7 @@ class TestGating(StageCoverageTestBase):
         self.run_script(UPLOAD_COVERAGE="FALSE")
         self.assertEqual(self.outputs()["staged"], "false")
 
-    def test_force_true_without_reports_skips(self):
+    def test_no_reports_skips_even_when_enabled(self):
         self.run_script(UPLOAD_COVERAGE="true")
         self.assertEqual(self.outputs()["staged"], "false")
         self.assertFalse(os.path.exists(self.coverage_dir))

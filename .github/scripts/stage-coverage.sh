@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Stage JaCoCo reports into COVERAGE_DIR, flattened to per-module names, for the
-# upload workflow to send to Codecov. The upload derives commit/branch/PR from
-# the trusted workflow_run event, so no metadata is carried. Emits staged=true|false.
+# upload workflow to send to Codecov. Emits staged=true|false.
 set -euo pipefail
 
 VALUE=$(echo "${UPLOAD_COVERAGE:-}" | tr '[:upper:]' '[:lower:]')
@@ -10,8 +9,7 @@ if [ "$VALUE" = "false" ]; then
   exit 0
 fi
 
-# No reports means nothing to upload; skip so the upload job isn't handed an
-# empty file list.
+# No reports: skip so the upload job isn't handed an empty file list.
 reports=$(find . -name 'jacoco.xml')
 if [ -z "$reports" ]; then
   echo "staged=false" >> "$GITHUB_OUTPUT"

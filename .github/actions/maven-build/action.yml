@@ -21,7 +21,7 @@ inputs:
     required: false
     default: 'false'
   upload_coverage:
-    description: 'Force staging coverage for upload on/off. If empty, stages when JaCoCo reports are found.'
+    description: 'Set "false" to skip staging coverage; otherwise coverage is staged when JaCoCo reports are found.'
     required: false
     default: ''
 
