@@ -52,14 +52,6 @@ class StageCoverageTestBase(unittest.TestCase):
                 result[key] = value
         return result
 
-    def metadata(self):
-        result = {}
-        with open(os.path.join(self.coverage_dir, "codecov-metadata.env")) as f:
-            for line in f:
-                key, _, value = line.rstrip("\n").partition("=")
-                result[key] = value
-        return result
-
     def staged_reports(self):
         return sorted(
             name for name in os.listdir(self.coverage_dir) if name.endswith("-jacoco.xml")
@@ -69,27 +61,27 @@ class StageCoverageTestBase(unittest.TestCase):
 class TestGating(StageCoverageTestBase):
     def test_auto_detect_with_reports_stages(self):
         self.write_report(".")
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="")
         self.assertEqual(self.outputs()["staged"], "true")
 
     def test_auto_detect_without_reports_skips(self):
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="")
         self.assertEqual(self.outputs()["staged"], "false")
         self.assertFalse(os.path.exists(self.coverage_dir))
 
     def test_force_false_skips_even_with_reports(self):
         self.write_report(".")
-        self.run_script(UPLOAD_COVERAGE="false", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="false")
         self.assertEqual(self.outputs()["staged"], "false")
         self.assertFalse(os.path.exists(self.coverage_dir))
 
     def test_force_false_is_case_insensitive(self):
         self.write_report(".")
-        self.run_script(UPLOAD_COVERAGE="FALSE", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="FALSE")
         self.assertEqual(self.outputs()["staged"], "false")
 
     def test_force_true_without_reports_skips(self):
-        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="true")
         self.assertEqual(self.outputs()["staged"], "false")
         self.assertFalse(os.path.exists(self.coverage_dir))
 
@@ -99,23 +91,11 @@ class TestReportNaming(StageCoverageTestBase):
         self.write_report(".")
         self.write_report("api")
         self.write_report(os.path.join("omod", "sub"))
-        self.run_script(UPLOAD_COVERAGE="true", EVENT_NAME="push")
+        self.run_script(UPLOAD_COVERAGE="true")
         self.assertEqual(
             self.staged_reports(),
             ["api-jacoco.xml", "omod-sub-jacoco.xml", "root-jacoco.xml"],
         )
-
-
-class TestMetadata(StageCoverageTestBase):
-    def test_pull_request_records_pr_number(self):
-        self.write_report("api")
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="pull_request", PR_NUMBER="16")
-        self.assertEqual(self.metadata(), {"PR": "16"})
-
-    def test_push_records_empty_pr(self):
-        self.write_report("api")
-        self.run_script(UPLOAD_COVERAGE="", EVENT_NAME="push")
-        self.assertEqual(self.metadata(), {"PR": ""})
 
 
 if __name__ == "__main__":

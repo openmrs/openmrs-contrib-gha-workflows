@@ -73,10 +73,10 @@ direct upload from that run always fails with `Token required - not valid tokenl
 
 Instead, the actual upload runs in `upload-coverage.yml`, triggered by a [`workflow_run`][workflow-run] event **after**
 the build completes. Because `workflow_run` runs in the base repository's trusted context (OIDC available, `openmrs`
-owner), it can upload coverage on the fork's behalf. The commit and branch reported to Codecov come from the trusted
-`workflow_run` event, not the fork-controlled artifact — a fork branch is namespaced as `owner:branch` so it can never be
-attributed to a base-repo branch. Only the PR number is carried in the artifact (the `workflow_run` payload has none for
-fork PRs) and is validated numeric before use.
+owner), it can upload coverage on the fork's behalf. The commit, branch, and PR number reported to Codecov all come from
+trusted sources — the `workflow_run` event and the base-repo API — never the fork-controlled artifact, which carries only
+the JaCoCo reports. A fork branch is namespaced as `owner:branch` so it can never be attributed to a base-repo branch,
+and the PR is resolved from the head commit via the API (the `workflow_run` payload has none for fork PRs).
 
 A `workflow_run` trigger only fires for a workflow defined in the consuming repo's **default branch**, so it cannot be
 centralised here — each module repo needs a small stub that wires its build workflow to the shared upload workflow:
@@ -92,6 +92,13 @@ on:
 
 jobs:
   upload:
+    # The upload workflow requires these; declare them so it works regardless of
+    # the repo's default token permissions.
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      pull-requests: read
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/upload-coverage.yml@main
 ```
 
@@ -160,5 +167,5 @@ production workflows call keeps the smoke test from drifting away from real cons
 This covers the build-path actions — `checkout`, `setup-java`, `setup-node`, `cache`, and `upload-artifact`. Actions
 that require org secrets or external services (the SNAPSHOT/release deploys, Transifex sync, the GitHub App token, and
 the Codecov upload itself) are **not** smoke-tested and should be reviewed manually when their pins change. The
-coverage-staging logic that runs before the upload (`stage-coverage.sh`) is covered by the inference scripts' unit
-tests instead.
+coverage shell logic (`stage-coverage.sh` and `prepare-codecov-upload.sh`) is covered by its own unit tests
+(`test_stage_coverage.py`, `test_prepare_codecov_upload.py`) instead.

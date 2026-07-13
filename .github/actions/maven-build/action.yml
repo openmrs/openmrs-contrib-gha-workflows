@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'clean install'
   is_main_java:
-    description: 'Whether this is the main Java version (gates the coverage upload) ("true"/"false")'
+    description: 'Whether this is the main Java version (gates coverage staging) ("true"/"false")'
     required: false
     default: 'false'
   upload_coverage:
@@ -50,8 +50,6 @@ runs:
       env:
         UPLOAD_COVERAGE: ${{ inputs.upload_coverage }}
         COVERAGE_DIR: ${{ runner.temp }}/coverage
-        EVENT_NAME: ${{ github.event_name }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
       run: bash "${{ github.action_path }}/../../scripts/stage-coverage.sh"
 
     - name: Upload coverage reports artifact
