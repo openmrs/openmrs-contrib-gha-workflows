@@ -41,7 +41,7 @@ on:
       skill_url:
         description: 'Raw URL of the pr-review SKILL.md. Pin to a commit SHA.'
         type: string
-        default: 'https://raw.githubusercontent.com/openmrs/openmrs-module-querystore/a5ea7a9b4640849d31b6adf65f0e5706a3a18666/.claude/skills/pr-review/SKILL.md'
+        default: 'https://raw.githubusercontent.com/openmrs/openmrs-module-querystore/a10faa30cd336bf4246f79addb1674825c0a87f0/.claude/skills/pr-review/SKILL.md'
       model:
         description: 'Claude model id.'
         type: string
@@ -53,7 +53,7 @@ on:
       max_turns:
         description: 'Maximum agent turns.'
         type: number
-        default: 40
+        default: 100
       timeout_minutes:
         description: 'Job timeout in minutes.'
         type: number
@@ -123,7 +123,7 @@ jobs:
       # drift checks). This ref resolves for fork PRs too.
       - name: Check out the PR head
         if: steps.gate.outputs.allowed == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ github.event.issue.number }}/head
           fetch-depth: 0
