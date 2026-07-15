@@ -64,6 +64,46 @@ jobs:
   `release:prepare` — well before the longer `release:perform` deploy — so the token is normally used long before it
   expires. For an unusually long pre-push build, use the legacy PAT, which does not expire.
 
+## Code coverage
+
+The Maven build workflows (`build-maven.yml`, `build-backend-module.yml`) run tests with JaCoCo and, on the main Java
+version, stage the resulting `jacoco.xml` reports as a `coverage-reports` artifact. They do **not** upload to Codecov
+directly, because a build triggered by a **forked** pull request has no access to secrets or an OIDC token — so a
+direct upload from that run always fails with `Token required - not valid tokenless upload`.
+
+Instead, the actual upload runs in `upload-coverage.yml`, triggered by a [`workflow_run`][workflow-run] event **after**
+the build completes. Because `workflow_run` runs in the base repository's trusted context (OIDC available, `openmrs`
+owner), it can upload coverage on the fork's behalf. The commit, branch, and PR number reported to Codecov all come from
+trusted sources — the `workflow_run` event and the base-repo API — never the fork-controlled artifact, which carries only
+the JaCoCo reports. A fork branch is namespaced as `owner:branch` so it can never be attributed to a base-repo branch,
+and the PR is resolved from the head commit via the API (the `workflow_run` payload has none for fork PRs).
+
+A `workflow_run` trigger only fires for a workflow defined in the consuming repo's **default branch**, so it cannot be
+centralised here — each module repo needs a small stub that wires its build workflow to the shared upload workflow:
+
+```yaml
+# .github/workflows/upload-coverage.yml in the consuming repo
+name: Upload Coverage
+
+on:
+  workflow_run:
+    workflows: ["Build with Maven"]  # must match the `name:` of the repo's build workflow
+    types: [completed]
+
+jobs:
+  upload:
+    # The upload workflow requires these; declare them so it works regardless of
+    # the repo's default token permissions.
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      pull-requests: read
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/upload-coverage.yml@main
+```
+
+[workflow-run]: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run
+
 ## OWASP Dependency-Check
 
 There is a reusable workflow that runs [OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) against Java
@@ -126,4 +166,6 @@ production workflows call keeps the smoke test from drifting away from real cons
 
 This covers the build-path actions — `checkout`, `setup-java`, `setup-node`, `cache`, and `upload-artifact`. Actions
 that require org secrets or external services (the SNAPSHOT/release deploys, Transifex sync, the GitHub App token, and
-the Codecov upload) are **not** smoke-tested and should be reviewed manually when their pins change.
+the Codecov upload itself) are **not** smoke-tested and should be reviewed manually when their pins change. The
+coverage shell logic (`stage-coverage.sh` and `prepare-codecov-upload.sh`) is covered by its own unit tests
+(`test_stage_coverage.py`, `test_prepare_codecov_upload.py`) instead.

@@ -1,0 +1,76 @@
+name: Upload Coverage to Codecov
+
+# Companion to the Maven build workflows. The build runs on `pull_request` and
+# stages JaCoCo reports as a `coverage-reports` artifact rather than uploading
+# them directly, because a run triggered by a forked pull request has neither
+# secrets nor an OIDC token. This workflow is invoked from a `workflow_run`
+# trigger in the consuming repo, so it executes in the base repository's
+# trusted context — where OIDC is available — and uploads the staged reports
+# on the fork's behalf.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  pull-requests: read
+
+jobs:
+  upload:
+    name: Upload coverage to Codecov
+    if: github.repository_owner == 'openmrs'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout shared scripts
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ github.job_workflow_sha }}
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Download coverage reports
+        id: download
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          name: coverage-reports
+          path: coverage
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Warn if coverage artifact is unavailable
+        if: steps.download.outcome != 'success'
+        shell: bash
+        run: echo "::warning::No coverage-reports artifact could be downloaded from the build run; skipping upload."
+
+      - name: Prepare coverage for upload
+        id: meta
+        if: steps.download.outcome == 'success'
+        shell: bash
+        env:
+          # Commit/branch/PR are all resolved from the trusted workflow_run payload
+          # and base-repo API, never the fork-controlled artifact.
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          BASE_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          COVERAGE_DIR: coverage
+          OUTPUT_DIR: codecov-reports
+        run: bash .gha-workflows/.github/scripts/prepare-codecov-upload.sh
+
+      - name: Upload to Codecov
+        if: steps.meta.outputs.found == 'true'
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6.0.0
+        with:
+          use_oidc: true
+          disable_search: true
+          fail_ci_if_error: true
+          files: ${{ steps.meta.outputs.files }}
+          override_commit: ${{ steps.meta.outputs.commit }}
+          override_branch: ${{ steps.meta.outputs.branch }}
+          override_pr: ${{ steps.meta.outputs.pr }}
