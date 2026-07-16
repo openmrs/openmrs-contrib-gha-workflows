@@ -97,6 +97,23 @@ class TestReportNaming(StageCoverageTestBase):
             ["api-jacoco.xml", "omod-sub-jacoco.xml", "root-jacoco.xml"],
         )
 
+    def test_multiple_reports_per_module_are_kept(self):
+        # Unit (jacoco) and integration (jacoco-it) reports flatten to the same
+        # module name; the collision guard must keep both, not overwrite one.
+        for site, content in [("jacoco", "UT"), ("jacoco-it", "IT")]:
+            report_dir = os.path.join(self.project, "api", "target", "site", site)
+            os.makedirs(report_dir, exist_ok=True)
+            with open(os.path.join(report_dir, "jacoco.xml"), "w") as f:
+                f.write(content)
+        self.run_script(UPLOAD_COVERAGE="true")
+        staged = self.staged_reports()
+        self.assertEqual(len(staged), 2)
+        contents = []
+        for name in staged:
+            with open(os.path.join(self.coverage_dir, name)) as f:
+                contents.append(f.read())
+        self.assertEqual(sorted(contents), ["IT", "UT"])
+
 
 if __name__ == "__main__":
     unittest.main()
