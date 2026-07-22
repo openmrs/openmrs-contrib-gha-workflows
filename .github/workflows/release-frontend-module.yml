@@ -72,10 +72,10 @@ jobs:
       && (github.event.head_commit == null || !startsWith(github.event.head_commit.message, '(chore) Release'))
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout inference action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.job_workflow_sha }}
@@ -98,7 +98,7 @@ jobs:
           pre_release_patch_publish_command: ${{ inputs.pre_release_patch_publish_command }}
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
@@ -231,10 +231,10 @@ jobs:
     if: github.event_name == 'release' && github.repository_owner == 'openmrs'
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout inference action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.job_workflow_sha }}
@@ -256,7 +256,7 @@ jobs:
           resolve_pre_release: 'false'
 
       - name: 🟢 Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
