@@ -169,14 +169,14 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Checkout repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ steps.branch.outputs.name }}
           token: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
 
       - name: Checkout release scripts
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-bamboo
           path: release-scripts
@@ -184,7 +184,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Checkout inference action
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
           ref: ${{ github.job_workflow_sha }}
@@ -269,7 +269,7 @@ jobs:
             | python3 .gha-workflows/.github/scripts/select_previous_release.py
 
       - name: Set up Java ${{ steps.java.outputs.version }}
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: ${{ steps.java.outputs.version }}
           distribution: ${{ inputs.java_distribution }}
@@ -378,7 +378,7 @@ jobs:
           REPO: ${{ github.repository }}
 
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: refs/tags/${{ needs.release.outputs.tag_name }}
@@ -393,7 +393,7 @@ jobs:
           base-ref: ${{ needs.release.outputs.base_ref && format('refs/tags/{0}', needs.release.outputs.base_ref) || '' }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
           name: ${{ inputs.release_version }}
