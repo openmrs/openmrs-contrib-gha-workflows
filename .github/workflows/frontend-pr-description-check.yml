@@ -74,10 +74,10 @@ jobs:
 
           # Rule 2: First checkbox must be checked
           first_checkbox = next(
-              (line.strip() for line in lines if re.match(r'- \[[ x]\]', line.strip())),
+              (line.strip() for line in lines if re.match(r'- \[[ xX]\]', line.strip())),
               None
           )
-          if first_checkbox is None or not first_checkbox.startswith('- [x]'):
+          if first_checkbox is None or not first_checkbox.lower().startswith('- [x]'):
               print('PR description check failed.')
               print()
               print('Reason: The first checkbox in the Requirements section must be checked.')
