@@ -20,7 +20,15 @@ mkdir -p "$COVERAGE_DIR"
 echo "$reports" | while read -r report; do
   module=$(echo "$report" | sed -e 's#^\./##' -e 's#/\{0,1\}target/.*##' -e 's#/#-#g')
   [ -z "$module" ] && module=root
-  cp "$report" "$COVERAGE_DIR/${module}-jacoco.xml"
+  # Suffix on collision so a module with multiple reports (e.g. unit + IT) keeps
+  # both instead of one silently overwriting the other.
+  dest="$COVERAGE_DIR/${module}-jacoco.xml"
+  n=1
+  while [ -e "$dest" ]; do
+    dest="$COVERAGE_DIR/${module}-${n}-jacoco.xml"
+    n=$((n + 1))
+  done
+  cp "$report" "$dest"
 done
 
 echo "staged=true" >> "$GITHUB_OUTPUT"
