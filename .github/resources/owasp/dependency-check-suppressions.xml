@@ -152,4 +152,30 @@
         <cpe>cpe:/a:elastic:elasticsearch</cpe>
         <cpe>cpe:/a:elasticsearch:elasticsearch</cpe>
     </suppress>
+    <suppress>
+        <notes><![CDATA[
+        CVE-2026-24051 and CVE-2026-39883 are PATH-hijacking flaws in OpenTelemetry-Go, whose
+        resource detector (sdk/resource/host_id.go) execs the `ioreg` (Darwin) and `kenv`
+        (BSD/Solaris) commands by bare name, so a locally modified PATH gives arbitrary code
+        execution. NVD scopes both to cpe:2.3:a:opentelemetry:opentelemetry:*:*:*:*:*:go:*:* --
+        the `go` target_sw -- fixed in the Go SDK v1.40.0 and v1.43.0 respectively.
+
+        The jars flagged here are the Java implementation (io.opentelemetry:opentelemetry-api and
+        the opentelemetry-context it pulls in), which arrives transitively from
+        co.elastic.clients:elasticsearch-java. It contains no Go code and no resource detector that
+        execs an external command, so neither CVE applies to it. Dependency-Check's CPE matcher
+        drops the target_sw field when it matches a jar to cpe:/a:opentelemetry:opentelemetry, so
+        the Java jar's version falls inside the Go SDK's affected range and the finding fires.
+
+        Suppressed by CVE ID scoped to the OpenTelemetry Java groups rather than by CPE, because
+        that same CPE legitimately covers the Java implementation (target_sw=java); suppressing the
+        CPE outright would hide a future advisory that really does affect these jars. The packageUrl
+        covers io.opentelemetry and its sibling groups (io.opentelemetry.instrumentation,
+        io.opentelemetry.semconv, ...) because they are all Java artifacts of the same project and
+        carry the same CPE, so a version bump or a new transitive otel jar does not reopen this.
+        ]]></notes>
+        <packageUrl regex="true">^pkg:maven/io\.opentelemetry(\..*)?/.*@.*$</packageUrl>
+        <cve>CVE-2026-24051</cve>
+        <cve>CVE-2026-39883</cve>
+    </suppress>
 </suppressions>
