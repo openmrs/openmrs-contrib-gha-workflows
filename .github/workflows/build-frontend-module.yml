@@ -34,6 +34,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      packages: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,6 +65,8 @@ jobs:
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@teenthofabud'
 
       - name: 🗂️ Cache node_modules
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -107,3 +110,8 @@ jobs:
         with:
           name: ${{ github.event.repository.name }}-packages
           path: ${{ steps.params.outputs.artifact_path }}
+
+      - name: 📦 Publish to GitHub Packages
+        run: yarn ci:publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
