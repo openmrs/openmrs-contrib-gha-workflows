@@ -12,7 +12,10 @@ on:
         type: string
         default: ''
       enable_turborepo_cache:
-        description: 'Enable Turborepo remote cache via GitHub Artifacts. If omitted, inferred (true when turbo.json is present).'
+        description: >-
+          Deprecated and ignored. Publishing builds always run uncached so that what reaches
+          the registry is built from the release tree. Retained so existing callers that pass
+          it keep validating; remove it from your workflow at your convenience.
         type: string
         default: ''
       pre_release_version_command:
@@ -91,7 +94,6 @@ jobs:
         with:
           node_version: ${{ inputs.node_version }}
           build_command: ${{ inputs.build_command }}
-          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
           artifact_path: ${{ inputs.artifact_path }}
           pre_release_version_command: ${{ inputs.pre_release_version_command }}
           pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
@@ -115,21 +117,6 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      - name: 🚀 Setup Turborepo cache
-        if: steps.params.outputs.enable_turborepo_cache == 'true'
-        uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          server-token: 'turbo-token'
-
-      - name: 🔧 Configure Turborepo environment
-        if: steps.params.outputs.enable_turborepo_cache == 'true'
-        run: |
-          {
-            echo "TURBO_API=http://127.0.0.1:9080"
-            echo "TURBO_TOKEN=turbo-token"
-            echo "TURBO_TEAM=${{ github.repository_owner }}"
-          } >> "$GITHUB_ENV"
 
       - name: 🏷️ Compute pre-release version
         id: version
@@ -250,7 +237,6 @@ jobs:
         with:
           node_version: ${{ inputs.node_version }}
           build_command: ${{ inputs.build_command }}
-          enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
           artifact_path: ${{ inputs.artifact_path }}
           release_publish_command: ${{ inputs.release_publish_command }}
           resolve_pre_release: 'false'
@@ -273,21 +259,6 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
-      - name: 🚀 Setup Turborepo cache
-        if: steps.params.outputs.enable_turborepo_cache == 'true'
-        uses: felixmosh/turborepo-gh-artifacts@118f869397261f74bc39cb8565f2d02c0ed4209f # v4.1.1
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          server-token: 'turbo-token'
-
-      - name: 🔧 Configure Turborepo environment
-        if: steps.params.outputs.enable_turborepo_cache == 'true'
-        run: |
-          {
-            echo "TURBO_API=http://127.0.0.1:9080"
-            echo "TURBO_TOKEN=turbo-token"
-            echo "TURBO_TEAM=${{ github.repository_owner }}"
-          } >> "$GITHUB_ENV"
 
       - name: 🏗️ Run build
         run: ${{ steps.params.outputs.build_command }}
