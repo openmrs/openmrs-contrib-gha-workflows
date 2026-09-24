@@ -35,6 +35,16 @@
         <packageUrl regex="true">^pkg:maven/org\.openmrs\.liquibase/openmrs-liquibase@.*$</packageUrl>
         <cve>CVE-2022-0839</cve>
     </suppress>
+	<suppress>
+        <notes><![CDATA[
+        CVE-2022-23612: Directory traversal in OpenMRS Core's StartupFilter when serving
+        requests under /images and /initfilter/scripts, allowing arbitrary files readable
+        by the OpenMRS process to be exposed. This is a false positive for module JARs —
+        the vulnerable request handling lives in openmrs-core's web layer, not in any module.
+        The scanner incorrectly matches module artifacts via the shared openmrs namespace.
+        ]]></notes>
+        <cve>CVE-2022-23612</cve>
+</suppress>
     <suppress>
         <notes><![CDATA[
         CVE-2017-12796: Unauthenticated XML deserialization RCE in the Reporting Compatibility Add On
