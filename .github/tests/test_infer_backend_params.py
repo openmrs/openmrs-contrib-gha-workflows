@@ -95,10 +95,10 @@ class TestMapToJava(unittest.TestCase):
         self.assertEqual(infer.map_to_java("2.8.5"), [8, 11, 17, 21])
 
     def test_3_0_0(self):
-        self.assertEqual(infer.map_to_java("3.0.0"), [25])
+        self.assertEqual(infer.map_to_java("3.0.0"), [21, 25])
 
     def test_3_0_0_snapshot(self):
-        self.assertEqual(infer.map_to_java("3.0.0-SNAPSHOT"), [25])
+        self.assertEqual(infer.map_to_java("3.0.0-SNAPSHOT"), [21, 25])
 
     def test_below_2_0(self):
         self.assertIsNone(infer.map_to_java("1.12.0"))
@@ -119,7 +119,7 @@ class TestMapRangeToJava(unittest.TestCase):
         self.assertEqual(result, [8, 11, 17, 21, 25])
 
     def test_3_x_range(self):
-        self.assertEqual(infer.map_range_to_java("[3.0.0,)"), [25])
+        self.assertEqual(infer.map_range_to_java("[3.0.0,)"), [21, 25])
 
 
 # ---------------------------------------------------------------------------
@@ -833,7 +833,31 @@ class TestEndToEnd(unittest.TestCase):
                 <plugins>
                   <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <configuration><target>21</target></configuration>
+                    <configuration><target>17</target></configuration>
+                  </plugin>
+                </plugins>
+              </build>
+            </project>""")
+        self.assertEqual(main, "21")
+        self.assertEqual(versions, [21, 25])
+
+    def test_compiler_25_filters_3_x_matrix(self):
+        main, versions = self._run_inference("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <dependencyManagement>
+                <dependencies>
+                  <dependency>
+                    <groupId>org.openmrs.api</groupId>
+                    <artifactId>openmrs-api</artifactId>
+                    <version>3.0.0-SNAPSHOT</version>
+                  </dependency>
+                </dependencies>
+              </dependencyManagement>
+              <build>
+                <plugins>
+                  <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration><target>25</target></configuration>
                   </plugin>
                 </plugins>
               </build>
