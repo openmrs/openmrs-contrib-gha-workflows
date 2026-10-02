@@ -67,6 +67,9 @@ jobs:
   pre_release:
     name: Pre-release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      packages: ${{ steps.packages.outputs.names }}
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -117,6 +120,12 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
+      - name: 📋 List publishable packages
+        id: packages
+        run: |
+          names=$(yarn workspaces list --json --no-private | jq -r '.name' | tr '\n' ' ')
+          echo "Publishable packages: $names"
+          echo "names=$names" >> "$GITHUB_OUTPUT"
 
       - name: 🏷️ Compute pre-release version
         id: version
@@ -195,6 +204,25 @@ jobs:
         run: |
           echo "::error::Triggering the RefApp build needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_PAT. github.token cannot dispatch to another repository."
           exit 1
+
+      - name: ⏳ Wait for packages to appear on npm
+        timeout-minutes: 15
+        env:
+          VERSION: ${{ needs.pre_release.outputs.version }}
+          PACKAGES: ${{ needs.pre_release.outputs.packages }}
+        run: |
+          if [ -z "$VERSION" ] || [ -z "$PACKAGES" ]; then
+            echo "::error::Missing version or package list from the pre_release job."
+            exit 1
+          fi
+
+          for pkg in $PACKAGES; do
+            until [ "$(npm view "${pkg}@${VERSION}" version 2>/dev/null)" = "$VERSION" ]; do
+              echo "Waiting for ${pkg}@${VERSION} on npm..."
+              sleep 10
+            done
+            echo "✅ ${pkg}@${VERSION} is live"
+          done
 
       - name: 🔑 Generate GitHub App token
         id: app-token
