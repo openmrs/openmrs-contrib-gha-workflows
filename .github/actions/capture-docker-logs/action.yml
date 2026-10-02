@@ -1,0 +1,31 @@
+name: Capture Docker Logs
+description: >
+  Write the logs of every Docker container on the runner, running or
+  stopped, to <dest>/<container name>.log. A container whose logs cannot
+  be read is skipped with a warning; the step fails only if the containers
+  cannot be listed.
+
+inputs:
+  dest:
+    description: 'Directory to write the log files to. Created if it does not exist.'
+    required: false
+    default: 'logs'
+
+runs:
+  using: composite
+  steps:
+    - name: Capture Docker logs
+      shell: bash
+      env:
+        DEST: ${{ inputs.dest }}
+      run: |
+        mkdir -p "$DEST"
+        containers=$(docker ps --all --format '{{.Names}}')
+        while IFS= read -r container; do
+          if [ -n "$container" ]; then
+            if ! docker logs "$container" > "$DEST/$container.log" 2>&1; then
+              rm -f "$DEST/$container.log"
+              echo "::warning::Could not collect logs for container $container"
+            fi
+          fi
+        done <<< "$containers"

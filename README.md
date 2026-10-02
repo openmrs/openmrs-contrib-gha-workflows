@@ -152,6 +152,30 @@ When updating `.github/resources/owasp/dependency-check-suppressions.xml`, keep 
 
 Read more: https://dependency-check.github.io/DependencyCheck/general/suppression.html
 
+## Capturing Docker logs
+
+The [`capture-docker-logs`](.github/actions/capture-docker-logs/action.yml) action writes the logs of every Docker
+container on the runner, running or stopped, to `<dest>/<container name>.log` (`dest` defaults to `logs`). It's meant for
+E2E jobs that start a Docker stack and upload its logs when tests fail. Set the step's `if:` to match when you want the
+logs:
+
+```yaml
+- name: Capture server logs
+  if: always()
+  uses: openmrs/openmrs-contrib-gha-workflows/.github/actions/capture-docker-logs@main
+  with:
+    dest: logs
+
+- name: Upload logs as artifact
+  if: always()
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: server-logs
+    path: logs
+```
+
+If one container's logs can't be read, the action skips it with a warning. It fails only if it can't list the containers.
+
 ## Dependency updates and smoke testing
 
 [Dependabot](.github/dependabot.yml) opens a grouped, weekly pull request that bumps the pinned action SHAs across both
@@ -161,8 +185,9 @@ Because the actions here only ever run when consuming repositories invoke them, 
 example a new major `actions/checkout`) would otherwise surface downstream rather than in this repo. The
 [smoke-test workflow](.github/workflows/smoke-test.yml) guards against that: on every pull request it runs the inference
 scripts' unit tests and lint, then drives the shared `maven-build` / `infer-backend-params` / `infer-frontend-params`
-actions against tiny throwaway projects under [`.github/tests/fixtures`](.github/tests/fixtures). Reusing the same composite actions the
-production workflows call keeps the smoke test from drifting away from real consumer behaviour.
+actions against tiny throwaway projects under [`.github/tests/fixtures`](.github/tests/fixtures), and runs
+`capture-docker-logs` against throwaway containers. Reusing the same composite actions the production workflows call
+keeps the smoke test from drifting away from real consumer behaviour.
 
 This covers the build-path actions — `checkout`, `setup-java`, `setup-node`, `cache`, and `upload-artifact`. Actions
 that require org secrets or external services (the SNAPSHOT/release deploys, Transifex sync, the GitHub App token, and

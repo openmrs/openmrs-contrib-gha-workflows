@@ -121,3 +121,29 @@ jobs:
           name: smoke-frontend
           path: ${{ steps.params.outputs.artifact_path }}
           if-no-files-found: error
+
+  docker-logs:
+    name: Docker log capture (capture-docker-logs action)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out shared actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: .gha-workflows
+
+      - name: Start fixture containers
+        run: |
+          docker run --name smoke-stopped alpine:3 sh -c 'echo stopped-stdout; echo stopped-stderr >&2'
+          docker run --detach --name smoke-running alpine:3 sh -c 'echo running-stdout; sleep 300'
+          timeout 30 sh -c 'until docker logs smoke-running | grep -q running-stdout; do sleep 1; done'
+
+      - name: Capture Docker logs
+        uses: ./.gha-workflows/.github/actions/capture-docker-logs
+        with:
+          dest: smoke-logs
+
+      - name: Verify captured logs
+        run: |
+          grep -qx stopped-stdout smoke-logs/smoke-stopped.log
+          grep -qx stopped-stderr smoke-logs/smoke-stopped.log
+          grep -qx running-stdout smoke-logs/smoke-running.log
