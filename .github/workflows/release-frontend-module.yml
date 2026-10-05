@@ -62,6 +62,13 @@ on:
         description: 'Exact version to release (e.g., 12.4.0). When set, overrides release_type.'
         type: string
         default: ''
+      publish_only:
+        description: >-
+          Finish a release whose publish failed after the tag was already pushed. Skips the bump,
+          commit and push entirely: checks out the existing tag for `release_version`, builds it
+          and publishes to npm. Requires `release_version`; `release_type` is ignored.
+        type: boolean
+        default: false
       release_version_command:
         description: >-
           Command to set the release version. Available env var: RELEASE_VERSION, which holds either
@@ -286,6 +293,17 @@ jobs:
           echo "::error::APP_ID and APP_PRIVATE_KEY must be set together — got one without the other. Check for a typo in the caller's secret names."
           exit 1
 
+      # Checked before the checkout below, whose ref is built from this input.
+      - name: 🔒 Validate publish-only request
+        if: inputs.publish_only
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [ -z "$RELEASE_VERSION" ]; then
+            echo "::error::publish_only needs release_version — it names the already-tagged version to build and publish."
+            exit 1
+          fi
+
       - name: Resolve branch
         id: branch
         env:
@@ -314,7 +332,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ steps.branch.outputs.name }}
+          # Publish-only builds the released tree, not the branch tip, which may
+          # have moved on since the tag was cut.
+          ref: >-
+            ${{ inputs.publish_only
+                && format('refs/tags/{0}{1}', inputs.tag_prefix, inputs.release_version)
+                || steps.branch.outputs.name }}
           token: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
 
       - name: Checkout inference action
@@ -369,6 +392,7 @@ jobs:
         run: yarn install --immutable
 
       - name: 🔧 Configure Git
+        if: ${{ !inputs.publish_only }}
         env:
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
@@ -377,6 +401,7 @@ jobs:
           git config user.email "$GIT_USER_EMAIL"
 
       - name: Resolve release argument
+        if: ${{ !inputs.publish_only }}
         id: arg
         env:
           RELEASE_TYPE: ${{ inputs.release_type }}
@@ -401,11 +426,13 @@ jobs:
       # The version command accepts a strategy (patch/minor/major) or an exact
       # version, the same as `yarn release <type|version>` locally.
       - name: 🏷️ Set release version
+        if: ${{ !inputs.publish_only }}
         env:
           RELEASE_VERSION: ${{ steps.arg.outputs.value }}
         run: ${{ steps.params.outputs.release_version_command }}
 
       - name: 🔍 Read back release version
+        if: ${{ !inputs.publish_only }}
         id: bump
         env:
           RELEASE_TYPE: ${{ steps.arg.outputs.label }}
@@ -427,17 +454,31 @@ jobs:
             echo "- **Version:** \`$OLD\` → \`$NEW\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The one place the effective version is settled: the bump's result
+      # normally, or the input naming the existing tag in publish-only mode.
+      # Everything downstream reads steps.tag.outputs.version.
       - name: Compute release tag name
         id: tag
         env:
           TAG_PREFIX: ${{ inputs.tag_prefix }}
-          RELEASE_VERSION: ${{ steps.bump.outputs.version }}
+          RELEASE_VERSION: ${{ steps.bump.outputs.version || inputs.release_version }}
+          PUBLISH_ONLY: ${{ inputs.publish_only }}
         run: |
           TAG_NAME="${TAG_PREFIX}${RELEASE_VERSION}"
           echo "name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISH_ONLY" = "true" ]; then
+            # The bump step writes this header in a normal run.
+            {
+              echo "### Release Parameters 🚀"
+              echo "- **Mode:** \`publish-only\` — no bump, commit or push"
+              echo "- **Version:** \`$RELEASE_VERSION\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- **Release Tag:** \`$TAG_NAME\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify tag does not exist
+        if: ${{ !inputs.publish_only }}
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
@@ -450,7 +491,7 @@ jobs:
         id: prev
         env:
           TAG_PREFIX: ${{ inputs.tag_prefix }}
-          RELEASE_VERSION: ${{ steps.bump.outputs.version }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
         run: |
           # Base for release notes: the latest stable release older than this one,
           # so a patch-branch release doesn't diff against a newer main-line tag.
@@ -461,6 +502,7 @@ jobs:
             | TAG_PREFIX="$TAG_PREFIX" python3 .gha-workflows/.github/scripts/select_previous_release.py
 
       - name: 💾 Commit and tag
+        if: ${{ !inputs.publish_only }}
         env:
           RELEASE_VERSION: ${{ steps.bump.outputs.version }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
@@ -474,6 +516,7 @@ jobs:
         run: ${{ steps.params.outputs.build_command }}
 
       - name: ⬆️ Push release commit and tag
+        if: ${{ !inputs.publish_only }}
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
@@ -494,6 +537,94 @@ jobs:
           name: ${{ github.event.repository.name }}-packages
           path: ${{ steps.params.outputs.artifact_path }}
           overwrite: true
+
+      # A failed release is never rolled back. The commit and tag are pushed
+      # BEFORE publishing (npm versions are immutable, so the reverse order could
+      # strand packages that no tag points at), and nothing can un-publish npm.
+      # So report exactly what did and did not happen, and what to do about it.
+      - name: 🚨 Report release state on failure
+        if: failure()
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          PUBLISH_ONLY: ${{ inputs.publish_only }}
+        run: |
+          {
+            echo
+            echo "### ❌ Release failed — current state"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "Failed before a release tag was computed. Nothing was committed, pushed or published — fix the error above and re-run." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            {
+              echo "- **Tag \`$RELEASE_TAG\`:** not pushed"
+              echo "- **npm:** nothing published"
+              echo
+              echo "Nothing left the runner, so \`$RELEASE_VERSION\` is still free. Fix the error above and re-run."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # The tag is on the remote, so the push succeeded and the failure came
+          # at or after publish. Work out how far the publish got.
+          LIVE=$(mktemp)
+          MISSING=$(mktemp)
+          PKGS=$(yarn workspaces list --json --no-private 2>/dev/null | jq -r '.name' 2>/dev/null || true)
+          for PKG in $PKGS; do
+            if [ "$(npm view "${PKG}@${RELEASE_VERSION}" version 2>/dev/null)" = "$RELEASE_VERSION" ]; then
+              echo "  - \`${PKG}\`" >> "$LIVE"
+            else
+              echo "  - \`${PKG}\`" >> "$MISSING"
+            fi
+          done
+
+          {
+            if [ "$PUBLISH_ONLY" = "true" ]; then
+              echo "- **Tag \`$RELEASE_TAG\`:** pre-existing — this run committed and pushed nothing"
+            else
+              echo "- **Tag \`$RELEASE_TAG\`:** pushed to \`$BRANCH\` — commit and tag are live"
+            fi
+            if [ -s "$LIVE" ]; then
+              echo "- **npm — already published at \`$RELEASE_VERSION\`:**"
+              cat "$LIVE"
+            else
+              echo "- **npm:** nothing published at \`$RELEASE_VERSION\`"
+            fi
+            # Only worth naming when the publish got partway; if nothing
+            # published, the line above already says so.
+            if [ -s "$LIVE" ] && [ -s "$MISSING" ]; then
+              echo "- **npm — NOT published:**"
+              cat "$MISSING"
+            fi
+            echo
+            echo "#### Recovery"
+            echo
+            if [ -s "$LIVE" ]; then
+              echo "⚠️ Some packages are already on npm at \`$RELEASE_VERSION\`, and **npm versions cannot be republished or reused**. Do not re-run this workflow at \`$RELEASE_VERSION\`, and do not delete the tag — it matches what is on npm."
+              echo
+              echo "Re-running with **publish_only** and \`release_version: $RELEASE_VERSION\` is safe here: the already-published packages fail with EPUBLISHCONFLICT, so use it only if your publish command tolerates that. Otherwise publish the missing packages by hand at the same version, or leave \`$RELEASE_VERSION\` partial and cut the next version."
+            elif [ "$PUBLISH_ONLY" = "true" ]; then
+              echo "Nothing reached npm and the tag is untouched. Fix the error above and re-run with **publish_only** and \`release_version: $RELEASE_VERSION\`."
+            else
+              echo "Nothing reached npm, so \`$RELEASE_VERSION\` is still free. The tag and commit are already pushed, so pick one:"
+              echo
+              echo "1. **Finish this release** — re-run with **publish_only** and \`release_version: $RELEASE_VERSION\`. It builds and publishes the existing tag; no second bump or commit."
+              echo "2. **Start over** — remove the tag and the release commit, then release again:"
+              echo
+              echo '```bash'
+              echo "git push origin :refs/tags/$RELEASE_TAG"
+              echo "git revert --no-edit $RELEASE_TAG^{commit}"
+              echo '```'
+            fi
+            echo
+            echo "No GitHub Release was created: that job is skipped when this one fails."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   github_release:
     name: Create GitHub Release
