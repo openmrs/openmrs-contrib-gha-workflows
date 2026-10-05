@@ -189,7 +189,9 @@ jobs:
         run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
 
       - name: 💾 Commit version changes
-        run: git add . && git commit -m "Prerelease version" --no-verify
+        # Exclude the inference action: it is checked out INTO the workspace,
+        # so a bare `git add .` would commit this repo's tooling into theirs.
+        run: git add -- . ':(exclude).gha-workflows' && git commit -m "Prerelease version" --no-verify
 
       - name: 📤 Publish pre-release (main)
         if: github.ref_name == 'main'
@@ -466,7 +468,7 @@ jobs:
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
           # "(chore) Release" prefix keeps the pre_release job from firing on this push.
-          git add -A
+          git add -u
           git commit -m "(chore) Release v${RELEASE_VERSION}" --no-verify
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
 
