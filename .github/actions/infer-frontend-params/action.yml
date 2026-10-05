@@ -40,6 +40,10 @@ inputs:
     description: 'Override: Command to publish a release'
     required: false
     default: ''
+  release_version_command:
+    description: 'Override: Command to set the release version (RELEASE_VERSION is available as an env var)'
+    required: false
+    default: ''
   resolve_pre_release:
     description: 'Whether to resolve pre-release parameters. Set to "false" for release-only jobs.'
     required: false
@@ -73,6 +77,9 @@ outputs:
   release_publish_command:
     description: 'Resolved release publish command'
     value: ${{ steps.resolve.outputs.release_publish_command }}
+  release_version_command:
+    description: 'Resolved release version command'
+    value: ${{ steps.resolve.outputs.release_version_command }}
 
 runs:
   using: composite
@@ -100,6 +107,7 @@ runs:
         INPUT_PRE_RELEASE_PUBLISH_COMMAND: ${{ inputs.pre_release_publish_command }}
         INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ inputs.pre_release_patch_publish_command }}
         INPUT_RELEASE_PUBLISH_COMMAND: ${{ inputs.release_publish_command }}
+        INPUT_RELEASE_VERSION_COMMAND: ${{ inputs.release_version_command }}
         RESOLVE_PRE_RELEASE: ${{ inputs.resolve_pre_release }}
         INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
         INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
@@ -110,6 +118,7 @@ runs:
         INFERRED_PRE_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_publish_command }}
         INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_patch_publish_command }}
         INFERRED_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.release_publish_command }}
+        INFERRED_RELEASE_VERSION_COMMAND: ${{ steps.infer-frontend.outputs.release_version_command }}
       run: |
         echo "node_version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-22}}" >> "$GITHUB_OUTPUT"
         echo "build_command=${INPUT_BUILD_COMMAND:-${INFERRED_BUILD_COMMAND:-yarn turbo run build --color --concurrency=5}}" >> "$GITHUB_OUTPUT"
@@ -122,6 +131,7 @@ runs:
           echo "pre_release_patch_publish_command=${INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND:-${INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND}}" >> "$GITHUB_OUTPUT"
         fi
         echo "release_publish_command=${INPUT_RELEASE_PUBLISH_COMMAND:-${INFERRED_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public}}" >> "$GITHUB_OUTPUT"
+        echo "release_version_command=${INPUT_RELEASE_VERSION_COMMAND:-${INFERRED_RELEASE_VERSION_COMMAND:-yarn version \"\$RELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
 
         # artifact_path may be multiline (monorepo with multiple workspace globs)
         RESOLVED_ARTIFACT_PATH="${INPUT_ARTIFACT_PATH:-${INFERRED_ARTIFACT_PATH:-dist}}"

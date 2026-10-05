@@ -171,6 +171,11 @@ class TestMonorepoWithoutCiScripts(_FrontendParamsTestBase):
         self.assertIn("npm publish --access public", result["release_publish_command"])
         self.assertNotIn("--tag", result["release_publish_command"])
 
+        self.assertEqual(
+            result["release_version_command"],
+            'yarn workspaces foreach --all --topological version "$RELEASE_VERSION"',
+        )
+
 
 class TestMonorepoCommonOutputs(_FrontendParamsTestBase):
     def test_common_monorepo_outputs(self):
@@ -229,6 +234,7 @@ class TestSingleApp(_FrontendParamsTestBase):
         self.assertNotIn("pre_release_version_command", result)
         self.assertNotIn("pre_release_publish_command", result)
         self.assertNotIn("release_publish_command", result)
+        self.assertNotIn("release_version_command", result)
         self.assertNotIn("verify_command", result)
 
     def test_single_app_no_build_command_when_turbo_exists(self):

@@ -125,6 +125,14 @@ def infer_params(path="package.json", base_dir=None):
                 "yarn run ci:prepublish-patch"
             )
 
+        # Release version command: bump every workspace (root included) to the
+        # release version. Mirrors the `release` script O3 monorepos already
+        # define (`yarn workspaces foreach --all --topological version`).
+        outputs["release_version_command"] = (
+            "yarn workspaces foreach --all --topological"
+            ' version "$RELEASE_VERSION"'
+        )
+
         if "ci:publish" in scripts:
             outputs["release_publish_command"] = "yarn run ci:publish"
         else:
