@@ -126,7 +126,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -321,7 +321,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -338,6 +338,25 @@ jobs:
           release_publish_command: ${{ inputs.release_publish_command }}
           release_version_command: ${{ inputs.release_version_command }}
           resolve_pre_release: 'false'
+
+      # `run: ${{ ... }}` with an empty value is a no-op step that PASSES. If the
+      # inference action resolves a command to nothing (checked out from the wrong
+      # ref, or too old to provide it), the release would tag without bumping, or
+      # push a tag having published nothing. Fail here instead.
+      - name: Verify inferred commands
+        env:
+          BUILD_COMMAND: ${{ steps.params.outputs.build_command }}
+          RELEASE_VERSION_COMMAND: ${{ steps.params.outputs.release_version_command }}
+          RELEASE_PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
+        run: |
+          STATUS=0
+          for NAME in BUILD_COMMAND RELEASE_VERSION_COMMAND RELEASE_PUBLISH_COMMAND; do
+            if [ -z "${!NAME}" ]; then
+              echo "::error::infer-frontend-params resolved $NAME to an empty string. Is the action checked out at the right ref, and new enough to provide it?"
+              STATUS=1
+            fi
+          done
+          exit $STATUS
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
