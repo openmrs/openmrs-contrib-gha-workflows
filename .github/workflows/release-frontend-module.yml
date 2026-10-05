@@ -189,9 +189,7 @@ jobs:
         run: git config user.email "infrastructure@openmrs.org" && git config user.name "OpenMRS CI"
 
       - name: 💾 Commit version changes
-        # Exclude the inference action: it is checked out INTO the workspace,
-        # so a bare `git add .` would commit this repo's tooling into theirs.
-        run: git add -- . ':(exclude).gha-workflows' && git commit -m "Prerelease version" --no-verify
+        run: git add -u && git commit -m "Prerelease version" --no-verify
 
       - name: 📤 Publish pre-release (main)
         if: github.ref_name == 'main'
