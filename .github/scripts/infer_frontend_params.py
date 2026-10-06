@@ -139,7 +139,7 @@ def infer_params(path="package.json", base_dir=None):
             outputs["release_publish_command"] = (
                 "yarn workspaces foreach --all --topological"
                 f"{exclude_flag}"
-                " npm publish --access public"
+                " npm publish --access public --tolerate-republish"
             )
     else:
         outputs["is_monorepo"] = "false"

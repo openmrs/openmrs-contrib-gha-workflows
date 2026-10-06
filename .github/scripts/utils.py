@@ -4,7 +4,12 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
+
+NPM_REGISTRY = "https://registry.npmjs.org"
 
 
 def strip_ns(root):
@@ -111,3 +116,28 @@ def publishable_package_names(workspaces):
     if len(workspaces) > 1:
         workspaces = [w for w in workspaces if w.get("location") != "."]
     return [w["name"] for w in workspaces if w.get("name")]
+
+
+def npm_version_state(package, version, token=None):
+    """Return "live", "missing" or "unknown" for `package@version` on npm.
+
+    Queries the registry's per-version endpoint, which is served uncached, rather
+    than `npm view`, which reads the package document from a CDN cache that can
+    lag a fresh publish by minutes. "missing" requires a definite 404; any other
+    failure (network, auth, rate limiting) is "unknown", so callers never mistake
+    an unreachable registry for an absent version. Pass `token` to see
+    restricted packages.
+    """
+    url = f"{NPM_REGISTRY}/{urllib.parse.quote(package, safe='@')}/{urllib.parse.quote(version)}"
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.load(response)
+    except urllib.error.HTTPError as e:
+        return "missing" if e.code == 404 else "unknown"
+    except (OSError, ValueError) as e:
+        print(f"::warning::Could not query npm for {package}: {e}", file=sys.stderr)
+        return "unknown"
+    return "live" if data.get("version") == version else "unknown"

@@ -20,6 +20,10 @@ suitable previous release exists (e.g. an artifact's first release), which
 lets the action fall back to its default behavior. Pre-release tags
 (anything carrying a semver pre-release suffix such as -alpha/-beta/-rc)
 are never selected as a base.
+
+Also writes `is_latest=true|false`: whether no stable release newer than
+RELEASE_VERSION exists, i.e. whether its GitHub Release should be marked
+Latest.
 """
 
 import os
@@ -60,15 +64,8 @@ def parse_release_version(version):
     )
 
 
-def select_previous(tags, prefix, release_version):
-    """Return the previous release tag, or None.
-
-    Among `tags` sharing `prefix` whose remainder is a stable semver version
-    strictly less than `release_version`, returns the one with the greatest
-    version. Pre-release and non-version tags are ignored.
-    """
-    target = parse_release_version(release_version)
-    best = None  # (version_tuple, tag)
+def stable_releases(tags, prefix):
+    """Yield (version_tuple, tag) for each stable release tag sharing `prefix`."""
     for raw in tags:
         tag = raw.strip()
         if not tag or not tag.startswith(prefix):
@@ -81,11 +78,25 @@ def select_previous(tags, prefix, release_version):
             int(match.group("minor")),
             int(match.group("patch")),
         )
-        if version >= target:
-            continue
-        if best is None or version > best[0]:
-            best = (version, tag)
-    return best[1] if best else None
+        yield version, tag
+
+
+def select_previous(tags, prefix, release_version):
+    """Return the previous release tag, or None.
+
+    Among `tags` sharing `prefix` whose remainder is a stable semver version
+    strictly less than `release_version`, returns the one with the greatest
+    version. Pre-release and non-version tags are ignored.
+    """
+    target = parse_release_version(release_version)
+    older = [(v, tag) for v, tag in stable_releases(tags, prefix) if v < target]
+    return max(older)[1] if older else None
+
+
+def is_newest(tags, prefix, release_version):
+    """True if no stable release in `tags` is newer than `release_version`."""
+    target = parse_release_version(release_version)
+    return all(v <= target for v, _ in stable_releases(tags, prefix))
 
 
 def main():
@@ -93,8 +104,12 @@ def main():
     if not release_version:
         sys.exit("::error::RELEASE_VERSION is required")
     prefix = os.environ.get("TAG_PREFIX", "")
-    base_ref = select_previous(sys.stdin.read().splitlines(), prefix, release_version)
-    write_github_outputs({"base_ref": base_ref or ""})
+    tags = sys.stdin.read().splitlines()
+    base_ref = select_previous(tags, prefix, release_version)
+    write_github_outputs({
+        "base_ref": base_ref or "",
+        "is_latest": str(is_newest(tags, prefix, release_version)).lower(),
+    })
 
 
 if __name__ == "__main__":

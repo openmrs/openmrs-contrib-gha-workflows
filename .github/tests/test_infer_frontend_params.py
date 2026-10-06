@@ -170,6 +170,7 @@ class TestMonorepoWithoutCiScripts(_FrontendParamsTestBase):
         )
         self.assertIn("npm publish --access public", result["release_publish_command"])
         self.assertNotIn("--tag", result["release_publish_command"])
+        self.assertIn("--tolerate-republish", result["release_publish_command"])
 
         self.assertEqual(
             result["release_version_command"],

@@ -34,7 +34,16 @@ on:
         type: string
         default: ''
       release_publish_command:
-        description: 'Command to publish a release. If omitted, inferred from package.json.'
+        description: >-
+          Command to publish a release. If omitted, inferred from package.json. In tagged-release
+          mode a failed publish is retried, so a monorepo command should pass --tolerate-republish
+          to `yarn npm publish`; otherwise a retry stops at the first package that already went out.
+        type: string
+        default: ''
+      verify_command:
+        description: >-
+          Command run on the release tree before the release commit and tag are pushed
+          (tagged-release mode). If omitted, inferred from package.json.
         type: string
         default: ''
       support_patch_branches:
@@ -55,7 +64,8 @@ on:
           package.json. Ignored when `release_version` is set. Setting either input cuts a
           tagged release, mirroring release-backend-module.yml: bump versions, commit, tag,
           push, publish to npm and create a GitHub Release with generated notes. When both are
-          empty the workflow only pre-releases on push; it never publishes a final release.
+          empty the workflow pre-releases on push and, for callers still triggered by
+          `release: created`, publishes the GitHub Release's tag (legacy mode).
         type: string
         default: ''
       release_version:
@@ -64,9 +74,10 @@ on:
         default: ''
       publish_only:
         description: >-
-          Finish a release whose publish failed after the tag was already pushed. Skips the bump,
-          commit and push entirely: checks out the existing tag for `release_version`, builds it
-          and publishes to npm. Requires `release_version`; `release_type` is ignored.
+          Finish a release whose publish failed after the tag was already pushed and could not be
+          rolled back automatically (e.g. some packages were published). Skips the bump, commit
+          and push entirely: checks out the existing tag for `release_version`, builds it and
+          publishes to npm. Requires `release_version`; `release_type` is ignored.
         type: boolean
         default: false
       release_version_command:
@@ -124,7 +135,9 @@ jobs:
       && github.repository_owner == 'openmrs'
       && inputs.release_type == '' && inputs.release_version == ''
       && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
-      && (github.event.head_commit == null || !startsWith(github.event.head_commit.message, '(chore) Release'))
+      && (github.event.head_commit == null || (
+        !startsWith(github.event.head_commit.message, '(chore) Release')
+        && !startsWith(github.event.head_commit.message, '(chore) Roll back release')))
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -264,16 +277,90 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_PAT }}
 
+  # Legacy mode: publishes the tag of a GitHub Release created by hand. Kept until
+  # callers move to tagged-release mode and drop `release: created` from their
+  # triggers. Releases created by the github_release job below raise no event, so
+  # the two modes never both publish the same version.
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    if: github.event_name == 'release' && github.repository_owner == 'openmrs'
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout inference action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ job.workflow_sha }}
+          sparse-checkout: |
+            .github/actions
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Infer frontend parameters
+        id: params
+        uses: ./.gha-workflows/.github/actions/infer-frontend-params
+        with:
+          node_version: ${{ inputs.node_version }}
+          build_command: ${{ inputs.build_command }}
+          artifact_path: ${{ inputs.artifact_path }}
+          release_publish_command: ${{ inputs.release_publish_command }}
+          resolve_pre_release: 'false'
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ steps.params.outputs.node_version }}
+          cache: 'yarn'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 🗂️ Cache node_modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ steps.params.outputs.node_version }}-modules-
+
+      - name: 📦 Install dependencies
+        run: yarn install --immutable
+
+      - name: 🏗️ Run build
+        run: ${{ steps.params.outputs.build_command }}
+
+      - name: 📢 Publish release
+        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.release_publish_command }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.event.repository.name }}-packages
+          path: ${{ steps.params.outputs.artifact_path }}
+          overwrite: true
+
   # ---------------------------------------------------------------------------
   # Tagged-release mode (inputs.release_type or inputs.release_version set). Mirrors
-  # release-backend-module.yml: bump -> commit -> tag -> build -> push ->
-  # publish -> GitHub Release with notes. This is the only path that publishes a
-  # final release; there is no longer an event-driven `release` job.
+  # release-backend-module.yml: bump -> commit -> tag -> build -> verify -> push ->
+  # publish -> GitHub Release with notes.
+  #
+  # Invariant: nothing reaches npm unless the release tag is on the remote, and a
+  # pushed tag is only removed when the registry answers 404 for every one of its
+  # packages. A failed publish is retried; if it still fails and npm has nothing at
+  # the version, the tag deletion and a revert of the release commit are pushed
+  # together.
   # ---------------------------------------------------------------------------
   tagged_release:
     name: Release to npm
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Generous, so the per-step timeouts below fire first: a timed-out step is a
+    # failure the recovery steps handle, whereas a job timeout may skip them.
+    timeout-minutes: 120
     if: (inputs.release_type != '' || inputs.release_version != '') && github.repository_owner == 'openmrs'
     concurrency:
       group: release-${{ github.repository }}
@@ -283,6 +370,7 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
       base_ref: ${{ steps.prev.outputs.base_ref }}
+      is_latest: ${{ steps.prev.outputs.is_latest }}
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
@@ -360,6 +448,7 @@ jobs:
           artifact_path: ${{ inputs.artifact_path }}
           release_publish_command: ${{ inputs.release_publish_command }}
           release_version_command: ${{ inputs.release_version_command }}
+          verify_command: ${{ inputs.verify_command }}
           resolve_pre_release: 'false'
 
       # `run: ${{ ... }}` with an empty value is a no-op step that PASSES. If the
@@ -371,9 +460,10 @@ jobs:
           BUILD_COMMAND: ${{ steps.params.outputs.build_command }}
           RELEASE_VERSION_COMMAND: ${{ steps.params.outputs.release_version_command }}
           RELEASE_PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
+          VERIFY_COMMAND: ${{ steps.params.outputs.verify_command }}
         run: |
           STATUS=0
-          for NAME in BUILD_COMMAND RELEASE_VERSION_COMMAND RELEASE_PUBLISH_COMMAND; do
+          for NAME in BUILD_COMMAND RELEASE_VERSION_COMMAND RELEASE_PUBLISH_COMMAND VERIFY_COMMAND; do
             if [ -z "${!NAME}" ]; then
               echo "::error::infer-frontend-params resolved $NAME to an empty string. Is the action checked out at the right ref, and new enough to provide it?"
               STATUS=1
@@ -509,24 +599,44 @@ jobs:
           # so a patch-branch release doesn't diff against a newer main-line tag.
           # The selector already tolerates an optional leading `v`, so strip a
           # plain `v` prefix and let it match both `v1.2.3` and `1.2.3` tags.
+          # Also decides is_latest, so publish-only on an old tag can't take the
+          # Latest badge from a newer release.
           if [ "$TAG_PREFIX" = "v" ]; then TAG_PREFIX=""; fi
           git tag --list "${TAG_PREFIX}*" \
             | TAG_PREFIX="$TAG_PREFIX" python3 .gha-workflows/.github/scripts/select_previous_release.py
 
       - name: 💾 Commit and tag
+        id: commit
         if: ${{ !inputs.publish_only }}
         env:
           RELEASE_VERSION: ${{ steps.bump.outputs.version }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
-          # "(chore) Release" prefix keeps the pre_release job from firing on this push.
+          # "(chore) Release" prefix keeps the pre_release job from firing on this push
+          # (as "(chore) Roll back release" does for roll-back-release.sh's revert).
           git add -u
           git commit -m "(chore) Release v${RELEASE_VERSION}" --no-verify
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: 🏗️ Run build
+        timeout-minutes: 30
         run: ${{ steps.params.outputs.build_command }}
 
+      - name: 🧪 Verify release tree
+        if: ${{ !inputs.publish_only }}
+        timeout-minutes: 30
+        run: ${{ steps.params.outputs.verify_command }}
+
+      - name: 📤 Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.event.repository.name }}-packages
+          path: ${{ steps.params.outputs.artifact_path }}
+          overwrite: true
+
+      # Publish must directly follow the push: the failure steps below treat "tag
+      # pushed, publish not successful" as a release that may need rolling back.
       - name: ⬆️ Push release commit and tag
         id: push
         if: ${{ !inputs.publish_only }}
@@ -540,29 +650,83 @@ jobs:
           git push --atomic origin "HEAD:refs/heads/$BRANCH" "refs/tags/$RELEASE_TAG"
 
       - name: 📢 Publish release
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.release_publish_command }}
+        id: publish
+        timeout-minutes: 20
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
+        run: |
+          yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"
+          for ATTEMPT in 1 2 3; do
+            if bash -eo pipefail -c "$PUBLISH_COMMAND"; then
+              exit 0
+            fi
+            if [ "$ATTEMPT" -lt 3 ]; then
+              echo "::warning::Publish attempt $ATTEMPT failed; retrying in $((ATTEMPT * 30))s"
+              sleep $((ATTEMPT * 30))
+            fi
+          done
+          echo "::error::Publish failed after 3 attempts"
+          exit 1
 
-      - name: 📤 Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # Establishes what a failed run left behind, including whether a push step
+      # that did not succeed landed anyway, and whether it is safe to roll back.
+      # Unknown state blocks the rollback.
+      - name: 🔍 Check release state
+        id: state
+        if: >-
+          (failure() || cancelled())
+          && steps.tag.outputs.name != ''
+          && (steps.commit.outcome == 'success' || inputs.publish_only)
+          && steps.publish.outcome != 'success'
+        timeout-minutes: 10
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
+          PUBLISH_ONLY: ${{ inputs.publish_only }}
+          PUBLISH_RAN: ${{ steps.publish.outcome == 'failure' || steps.publish.outcome == 'cancelled' }}
+          STATE_FILE: ${{ runner.temp }}/release-state.json
+        run: python3 .gha-workflows/.github/scripts/assess_release_state.py
+
+      # The App token from the start of the job may have expired by now.
+      - name: 🔑 Generate GitHub App token for rollback
+        id: rollback-token
+        if: >-
+          (failure() || cancelled())
+          && steps.state.outputs.safe_to_roll_back == 'true'
+          && env.HAS_APP_CREDS == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          name: ${{ github.event.repository.name }}-packages
-          path: ${{ steps.params.outputs.artifact_path }}
-          overwrite: true
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      # A failed release is never rolled back. The commit and tag are pushed
-      # BEFORE publishing (npm versions are immutable, so the reverse order could
-      # strand packages that no tag points at), and nothing can un-publish npm.
-      # So report exactly what did and did not happen, and what to do about it.
+      - name: ↩️ Roll back unpublished release
+        id: rollback
+        if: (failure() || cancelled()) && steps.state.outputs.safe_to_roll_back == 'true'
+        timeout-minutes: 5
+        env:
+          PUSH_TOKEN: ${{ steps.rollback-token.outputs.token }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+          RELEASE_TAG: ${{ steps.tag.outputs.name }}
+          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: bash .gha-workflows/.github/scripts/roll-back-release.sh
+
       - name: 🚨 Report release state on failure
-        if: failure()
+        if: failure() || cancelled()
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
           RELEASE_VERSION: ${{ steps.tag.outputs.version }}
           BRANCH: ${{ steps.branch.outputs.name }}
           PUBLISH_ONLY: ${{ inputs.publish_only }}
           PUSHED: ${{ steps.push.outcome == 'success' }}
+          PUBLISHED: ${{ steps.publish.outcome == 'success' }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          ROLLBACK_SHA: ${{ steps.rollback.outputs.sha }}
+          STATE_FILE: ${{ runner.temp }}/release-state.json
         run: python3 .gha-workflows/.github/scripts/report_release_state.py
 
   github_release:
@@ -591,34 +755,66 @@ jobs:
           echo "::error::Tag $RELEASE_TAG was not reachable after $MAX_RETRIES attempts"
           exit 1
 
-      - name: Checkout code
+      # A Release that already exists (e.g. created by hand, or by an earlier run
+      # in publish-only mode) is left as it is rather than overwritten.
+      - name: Check for an existing Release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.tagged_release.outputs.tag_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Only a definite 404 means no Release; any other error stops here rather
+          # than risk overwriting one that exists.
+          if OUT=$(gh api "repos/$REPO/releases/tags/$RELEASE_TAG" 2>&1 >/dev/null); then
+            echo "::notice::A GitHub Release for $RELEASE_TAG already exists; leaving it unchanged."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif ! grep -q "HTTP 404" <<< "$OUT"; then
+            echo "::error::Could not check for an existing Release for $RELEASE_TAG: $OUT"
+            exit 1
+          fi
+
+      - name: Checkout release scripts
+        if: steps.existing.outputs.exists != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          ref: refs/tags/${{ needs.tagged_release.outputs.tag_name }}
+          repository: openmrs/openmrs-contrib-gha-workflows
+          ref: ${{ job.workflow_sha }}
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
 
       - name: Create Release Notes
-        uses: openmrs/openmrs-contrib-create-release-notes@6b8ad87592ae0bdbcbfde8d740493d6f34bc8e97 # v2.1.0
-        id: create-release-notes
+        if: steps.existing.outputs.exists != 'true'
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          head-ref: refs/tags/${{ needs.tagged_release.outputs.tag_name }}
-          base-ref: ${{ needs.tagged_release.outputs.base_ref && format('refs/tags/{0}', needs.tagged_release.outputs.base_ref) || '' }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.tagged_release.outputs.tag_name }}
+          BASE_REF: ${{ needs.tagged_release.outputs.base_ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          # GitHub's generated notes (honouring the repo's .github/release.yml),
+          # regrouped by PR title type.
+          ARGS=(-f tag_name="$RELEASE_TAG")
+          if [ -n "$BASE_REF" ]; then ARGS+=(-f previous_tag_name="$BASE_REF"); fi
+          gh api -X POST "repos/$REPO/releases/generate-notes" "${ARGS[@]}" --jq .body \
+            | python3 .gha-workflows/.github/scripts/group_release_notes.py > "$RUNNER_TEMP/release-notes.md"
+          if [ ! -s "$RUNNER_TEMP/release-notes.md" ]; then
+            echo "::error::GitHub returned empty release notes for $RELEASE_TAG"
+            exit 1
+          fi
 
       # github.token deliberately: a Release created with it raises no `release`
       # event, so publishing here cannot set off release-triggered workflows in
       # the calling repo. Swap in the App token if a repo needs those to fire.
       - name: Create Release
+        if: steps.existing.outputs.exists != 'true'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           token: ${{ github.token }}
           tag_name: ${{ needs.tagged_release.outputs.tag_name }}
           name: ${{ needs.tagged_release.outputs.tag_name }}
-          body: |
-            ## What's Changed
-
-            ${{ steps.create-release-notes.outputs.release-notes }}
+          body_path: ${{ runner.temp }}/release-notes.md
           draft: false
           prerelease: false
-          make_latest: true
+          make_latest: ${{ needs.tagged_release.outputs.is_latest }}
