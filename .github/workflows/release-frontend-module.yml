@@ -295,7 +295,6 @@ jobs:
             echo "✅ ${pkg}@${VERSION} is live"
           done
 
-
       - name: 🔑 Generate GitHub App token
         id: app-token
         if: env.HAS_APP_CREDS == 'true'
