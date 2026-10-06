@@ -15,23 +15,28 @@ To avoid breaking repositories that have not yet been migrated, each workflow re
 App token (if APP_ID + APP_PRIVATE_KEY are set)  →  legacy bot PAT (if set)  →  github.token
 ```
 
-`github.token` is only a viable last resort for the **module release** checkout (a repo-local operation). The other
-three operations cannot work under `github.token` — cross-repo dispatch/push for the distro and dashboard workflows, and
-a CI-triggering, self-approvable PR for translations — so those workflows omit it and **fail fast** with a clear error
-when neither App credentials nor the legacy PAT are supplied.
+`github.token` is a viable last resort only for the **module release** checkouts, backend and frontend alike, which are
+repo-local operations. The remaining operations cannot work under it — cross-repo dispatch/push for the distro and
+dashboard workflows, and a CI-triggering, self-approvable PR for translations — so those jobs omit it and **fail fast**
+with a clear error when neither App credentials nor the legacy PAT are supplied.
 
 So a repo that passes the App credentials uses the App; a repo still passing the old PAT keeps working unchanged. Once
 every consuming repo has migrated, the legacy PAT secrets and the `|| secrets.<PAT>` fallback can be removed.
 
-The four functions are backed by four separate Apps, each installed only where it is needed and granted the minimum
+These five functions are backed by four Apps, each installed only where it is needed and granted the minimum
 permissions:
 
 | Function | Workflow | App permissions | Installed on |
 | --- | --- | --- | --- |
 | Translation updates | `tx-pull.yml` | `contents: write`, `pull-requests: write` | repos with Transifex automation |
-| Module release | `release-backend-module.yml` | `contents: write` (+ ruleset bypass) | released backend module repos |
+| Backend module release | `release-backend-module.yml` | `contents: write` (+ ruleset bypass) | released backend module repos |
+| Frontend module release | `release-frontend-module.yml` | `contents: write` (+ ruleset bypass) | released frontend module repos |
 | Distro build trigger | `release-frontend-module.yml` | `actions: write` | `openmrs-distro-referenceapplication` |
 | Security dashboard | `owasp-dependency-check.yml` | `contents: write` | `openmrs-contrib-dependency-vulnerability-dashboard` |
+
+`release-frontend-module.yml` accounts for two of those rows and exposes only one `APP_ID` / `APP_PRIVATE_KEY` pair, so a
+single App covers both: it pushes the release commit and tag to the calling repo, and dispatches the build on the
+distro repo. Install it in both places, with the permissions each row lists.
 
 Recommended org-secret names for the App credentials: `OMRS_TRANSLATION`, `OMRS_MODULE_RELEASE`, `OMRS_ESM_RELEASE`, and
 `OMRS_SEC_DASHBOARD` (each with an `_APP_ID` / `_APP_PRIVATE_KEY` pair). A caller wires them to the generic inputs, e.g.:
@@ -49,13 +54,15 @@ jobs:
 ### Setup notes
 
 - **Branch-protection bypass:** unlike an admin PAT, a GitHub App token does **not** bypass branch protection / rulesets
-  implicitly. The module release App must be added to each target repo's ruleset **bypass list**.
+  implicitly. The module release Apps, backend and frontend, must each be added to their target repos' ruleset
+  **bypass list** — the frontend one pushes a release commit and tag straight to the default branch.
 - **App credentials are all-or-nothing:** supply both `APP_ID` and `APP_PRIVATE_KEY` or neither. Supplying only one (e.g.
   a typo in a secret name) fails the run, rather than silently falling back to the PAT.
 - **Cross-repo scope:** the distro and dashboard tokens are minted scoped to the target repo (`owner` + `repositories`),
-  so those Apps must be installed on the target repo even when the workflow runs elsewhere.
-- **`github.token` is a repo-local safety net only:** it cannot bypass branch protection or act across repositories. The
-  module release checkout falls back to it (a push only fails later if the branch is protected), but the distro-dispatch,
+  so those Apps must be installed on the target repo even when the workflow runs elsewhere. Both module release tokens
+  are minted unscoped instead, against the calling repo's own installation.
+- **`github.token` is a repo-local safety net only:** it cannot bypass branch protection or act across repositories. Both
+  module release checkouts fall back to it (a push only fails later if the branch is protected), but the distro-dispatch,
   dashboard-sync, and translation workflows omit it from the fallback and **fail fast** with a clear error when neither
   App credentials nor the legacy PAT are provided.
 - **Dashboard sync is org-scoped:** `owasp-dependency-check` only syncs the report to the dashboard repo on
