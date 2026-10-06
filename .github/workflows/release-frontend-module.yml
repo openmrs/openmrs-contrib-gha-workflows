@@ -131,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      packages: ${{ steps.packages.outputs.names }}
+      packages: ${{ steps.packages.outputs.packages }}
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -209,12 +209,12 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          names=$(yarn workspaces list --json --no-private \
+          packages=$(yarn workspaces list --json --no-private \
             | jq -r '.location + "/package.json"' \
             | xargs jq -r --arg v "$VERSION" 'select(.version == $v) | .name' \
             | tr '\n' ' ')
-          echo "Publishable packages: $names"
-          echo "names=$names" >> "$GITHUB_OUTPUT"
+          echo "Publishable packages: $packages"
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
       - name: 🏗️ Run build
         run: ${{ steps.params.outputs.build_command }}
