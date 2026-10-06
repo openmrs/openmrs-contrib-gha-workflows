@@ -161,7 +161,7 @@ def render(tag, version, branch, publish_only, pushed, state=None, published=Fal
     else:
         revert_ref = release_sha or f"{tag}^{{commit}}"
         out += [
-            f"Nothing reached npm, but the automatic rollback failed (see its "
+            "Nothing reached npm, but the automatic rollback failed (see its "
             "log), so the tag and commit are still live. Pick one:",
             "",
             "1. **Finish this release** — re-run with **publish_only** and "

@@ -4,12 +4,11 @@
 import io
 import json
 import os
-import subprocess
-import urllib.error
 import sys
 import tempfile
 import textwrap
 import unittest
+import urllib.error
 import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
