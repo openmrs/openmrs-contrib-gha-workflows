@@ -83,6 +83,24 @@ class TestSelectPrevious(unittest.TestCase):
             spr.select_previous(["foo-1.0.0"], "foo-", "1.1.0-rc.1")
 
 
+class TestIsNewest(unittest.TestCase):
+    def test_newer_than_every_release(self):
+        self.assertTrue(spr.is_newest(["foo-2.5.3", "foo-2.6.0"], "foo-", "2.6.1"))
+
+    def test_older_than_an_existing_release(self):
+        self.assertFalse(spr.is_newest(["foo-2.5.3", "foo-3.0.0"], "foo-", "2.5.4"))
+
+    def test_equal_to_newest_tag(self):
+        # Publish-only runs against the tag that already exists.
+        self.assertTrue(spr.is_newest(["foo-2.5.3", "foo-2.5.4"], "foo-", "2.5.4"))
+
+    def test_ignores_newer_prereleases_and_other_artifacts(self):
+        self.assertTrue(spr.is_newest(["foo-3.0.0-rc.1", "bar-9.0.0"], "foo-", "2.5.4"))
+
+    def test_no_tags(self):
+        self.assertTrue(spr.is_newest([], "foo-", "1.0.0"))
+
+
 class TestMain(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -106,6 +124,10 @@ class TestMain(unittest.TestCase):
 
     def test_writes_selected_base_ref(self):
         self.assertIn("base_ref=foo-2.5.3", self._run(["foo-2.5.3", "foo-3.0.0"]))
+
+    def test_writes_is_latest(self):
+        self.assertIn("is_latest=false", self._run(["foo-2.5.3", "foo-3.0.0"]))
+        self.assertIn("is_latest=true", self._run(["foo-2.5.3"]))
 
     def test_writes_empty_base_ref_when_none(self):
         self.assertIn("base_ref=", self._run(["bar-1.0.0"]))

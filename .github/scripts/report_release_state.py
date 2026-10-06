@@ -1,34 +1,40 @@
 #!/usr/bin/env python3
 """Describe the state a failed release run left behind.
 
-A failed release is never rolled back. The commit and tag are pushed BEFORE
-publishing (npm versions are immutable, so the reverse order could strand
-packages that no tag points at), and nothing can un-publish npm. So rather than
-leaving an operator to work out what escaped, report exactly what did and did
-not happen, and what to do about it.
+The commit and tag are pushed BEFORE publishing (npm versions are immutable, so
+the reverse order could strand packages that no tag points at), and nothing can
+un-publish npm. When the publish fails with nothing on npm, the workflow rolls
+the tag and release commit back; otherwise the tag stays. Either way, report
+exactly what did and did not happen, and what to do about it.
 
 Configuration comes from the environment:
 
-  RELEASE_TAG      tag this run was cutting, empty if it failed before that
-  RELEASE_VERSION  version behind that tag
-  BRANCH           branch the release was cut from
-  PUBLISH_ONLY     "true" when this run reused an existing tag
-  PUSHED           "true" when THIS run's push step succeeded
+  RELEASE_TAG       tag this run was cutting, empty if it failed before that
+  RELEASE_VERSION   version behind that tag
+  BRANCH            branch the release was cut from
+  PUBLISH_ONLY      "true" when this run reused an existing tag
+  PUSHED            "true" when THIS run's push step succeeded; superseded by
+                    the push state in STATE_FILE when that is available
+  PUBLISHED         "true" when the publish step succeeded
+  RELEASE_SHA       the release commit this run created
+  ROLLBACK_OUTCOME  outcome of the rollback step ("success", "failure", ...)
+  ROLLBACK_SHA      the revert commit the rollback pushed
+  STATE_FILE        JSON written by assess_release_state.py; absent when that
+                    step did not run or failed
 
-PUSHED is the push step's own outcome rather than a probe of the remote: a tag
-being on the remote says nothing about who put it there, and publish-only
-always reuses one that was already pushed.
+Whether the tag was pushed comes from this run, never from the remote's tag
+name alone: a tag being on the remote says nothing about who put it there, and
+publish-only always reuses one that was already pushed. The assess step
+refines a failed push step by checking the remote for this run's own tag
+object.
 
 Writes markdown to GITHUB_STEP_SUMMARY. This runs when the job has already
 failed, so it must never add a failure of its own: every path exits 0.
 """
 
+import json
 import os
-import subprocess
 import sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from utils import publishable_package_names, yarn_workspaces
 
 HEADING = "### ❌ Release failed — current state"
 NO_GH_RELEASE = (
@@ -36,39 +42,14 @@ NO_GH_RELEASE = (
 )
 
 
-def is_published(package, version):
-    """True if `package@version` is already on the registry."""
-    try:
-        result = subprocess.run(
-            ["npm", "view", f"{package}@{version}", "version"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError as e:
-        print(f"::warning::Could not query npm for {package}: {e}", file=sys.stderr)
-        return False
-    return result.stdout.strip() == version
-
-
-def split_by_publish_state(packages, version, probe=None):
-    """Partition packages into (already published, not published).
-
-    `probe` resolves at call time rather than binding `is_published` as a
-    default, so the registry lookup stays substitutable.
-    """
-    probe = probe or is_published
-    live, missing = [], []
-    for package in packages:
-        (live if probe(package, version) else missing).append(package)
-    return live, missing
-
-
-def render(tag, version, branch, publish_only, pushed, live=(), missing=()):
+def render(tag, version, branch, publish_only, pushed, state=None, published=False,
+           rollback="", rollback_sha="", release_sha=""):
     """Return the markdown report for the state this run ended in.
 
-    Pure: `live` and `missing` are supplied by the caller so the branching can
-    be tested without touching the network.
+    Pure: `state` is the assess step's {"live", "missing", "unknown"} package
+    lists, or None when npm's state could not be established, so the branching
+    can be tested without touching the network. `pushed` is None when it could
+    not be established whether the tag reached the remote.
     """
     out = ["", HEADING, ""]
 
@@ -77,6 +58,30 @@ def render(tag, version, branch, publish_only, pushed, live=(), missing=()):
             "Failed before a release tag was computed. Nothing was committed, "
             "pushed or published — fix the error above and re-run."
         )
+        return "\n".join(out) + "\n"
+
+    if published:
+        out += [
+            f"Every package was published at `{version}` and tag `{tag}` is "
+            "live; the failure came afterwards. Do not delete the tag.",
+            "",
+            NO_GH_RELEASE,
+        ]
+        return "\n".join(out) + "\n"
+
+    if not publish_only and pushed is None:
+        commit = f"`{release_sha}`" if release_sha else "this run's release commit"
+        out += [
+            f"Could not tell whether this run's tag `{tag}` reached the remote, "
+            "or the remote has a tag of that name this run did not create. "
+            "Nothing was published.",
+            "",
+            f"Check what the remote's `{tag}` points at before re-running. Only "
+            f"if it is {commit}, re-run with **publish_only** and "
+            f"`release_version: {version}`. If there is no such tag, fix the "
+            "error above and re-run. If it points elsewhere, do not use "
+            "publish_only: it would publish that other commit.",
+        ]
         return "\n".join(out) + "\n"
 
     if not publish_only and not pushed:
@@ -89,8 +94,19 @@ def render(tag, version, branch, publish_only, pushed, live=(), missing=()):
         ]
         return "\n".join(out) + "\n"
 
-    # Either this run pushed the tag, or publish-only reused an existing one.
-    # Both mean the failure came at or after publish.
+    if rollback == "success":
+        out += [
+            f"Publishing failed and npm had none of the packages at `{version}`, "
+            f"so the release was rolled back: tag `{tag}` was deleted and the "
+            f"release commit was reverted in `{rollback_sha}`. `{version}` is "
+            "still free. Fix the error above and re-run the release.",
+            "",
+            NO_GH_RELEASE,
+        ]
+        return "\n".join(out) + "\n"
+
+    # The tag is live: this run pushed it and could not roll it back, or
+    # publish-only reused an existing one.
     if publish_only:
         out.append(
             f"- **Tag `{tag}`:** pre-existing — this run committed and pushed nothing"
@@ -100,32 +116,42 @@ def render(tag, version, branch, publish_only, pushed, live=(), missing=()):
             f"- **Tag `{tag}`:** pushed to `{branch}` — commit and tag are live"
         )
 
+    live = state["live"] if state else []
+    missing = state["missing"] if state else []
+    unknown = state["unknown"] if state else []
+    # With no packages classified at all, nothing is known about npm.
+    known = bool(live or missing or unknown)
+
     if live:
         out.append(f"- **npm — already published at `{version}`:**")
         out += [f"  - `{name}`" for name in live]
-    else:
+    if unknown:
+        out.append("- **npm, could not check:**")
+        out += [f"  - `{name}`" for name in unknown]
+    if not known:
+        out.append(f"- **npm:** could not determine what was published at `{version}`")
+    elif not live and not unknown:
         out.append(f"- **npm:** nothing published at `{version}`")
-
     # Only worth naming when the publish got partway; if nothing published, the
     # line above already says so.
-    if live and missing:
+    if missing and (live or unknown):
         out.append("- **npm — NOT published:**")
         out += [f"  - `{name}`" for name in missing]
 
     out += ["", "#### Recovery", ""]
 
-    if live:
+    if live or unknown or not known:
         out += [
-            f"⚠️ Some packages are already on npm at `{version}`, and "
+            f"⚠️ Some packages are or may be on npm at `{version}`, and "
             "**npm versions cannot be republished or reused**. Do not re-run "
             f"this workflow at `{version}`, and do not delete the tag — it "
-            "matches what is on npm.",
+            "may match what is on npm.",
             "",
-            f"Re-running with **publish_only** and `release_version: {version}` "
-            "is safe here: the already-published packages fail with "
-            "EPUBLISHCONFLICT, so use it only if your publish command tolerates "
-            "that. Otherwise publish the missing packages by hand at the same "
-            f"version, or leave `{version}` partial and cut the next version.",
+            f"Fix the error above and re-run with **publish_only** and "
+            f"`release_version: {version}`. That only finishes the release if "
+            "the publish command passes `--tolerate-republish`; otherwise "
+            f"publish the missing packages by hand at `{version}`, or leave "
+            f"`{version}` partial and cut the next version.",
         ]
     elif publish_only:
         out.append(
@@ -133,24 +159,37 @@ def render(tag, version, branch, publish_only, pushed, live=(), missing=()):
             f"and re-run with **publish_only** and `release_version: {version}`."
         )
     else:
+        revert_ref = release_sha or f"{tag}^{{commit}}"
         out += [
-            f"Nothing reached npm, so `{version}` is still free. The tag and "
-            "commit are already pushed, so pick one:",
+            f"Nothing reached npm, but the automatic rollback failed (see its "
+            "log), so the tag and commit are still live. Pick one:",
             "",
             "1. **Finish this release** — re-run with **publish_only** and "
             f"`release_version: {version}`. It builds and publishes the existing "
             "tag; no second bump or commit.",
-            "2. **Start over** — remove the tag and the release commit, then "
-            "release again:",
+            "2. **Start over** — remove the tag and the release commit together, "
+            "then release again:",
             "",
             "```bash",
-            f"git push origin :refs/tags/{tag}",
-            f"git revert --no-edit {tag}^{{commit}}",
+            f"git revert --no-edit {revert_ref}",
+            f"git push --atomic origin HEAD:refs/heads/{branch} :refs/tags/{tag}",
             "```",
         ]
 
     out += ["", NO_GH_RELEASE]
     return "\n".join(out) + "\n"
+
+
+def load_state(path):
+    """Return the assess step's package classification, or None if unavailable."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"::warning::Could not read release state {path}: {e}", file=sys.stderr)
+        return None
 
 
 def write_summary(markdown):
@@ -163,19 +202,27 @@ def write_summary(markdown):
         f.write(markdown)
 
 
+PUSHED_BY_STATE = {"pushed": True, "not_pushed": False, "unknown": None, "preexisting": False}
+
+
 def main():
-    tag = os.environ.get("RELEASE_TAG", "").strip()
-    version = os.environ.get("RELEASE_VERSION", "").strip()
-    branch = os.environ.get("BRANCH", "").strip()
-    publish_only = os.environ.get("PUBLISH_ONLY", "") == "true"
-    pushed = os.environ.get("PUSHED", "") == "true"
-
-    live, missing = (), ()
-    if tag and (publish_only or pushed):
-        packages = publishable_package_names(yarn_workspaces(("--no-private",)))
-        live, missing = split_by_publish_state(packages, version)
-
-    write_summary(render(tag, version, branch, publish_only, pushed, live, missing))
+    env = os.environ.get
+    state = load_state(env("STATE_FILE", ""))
+    pushed = env("PUSHED", "") == "true"
+    if state and state.get("push") in PUSHED_BY_STATE:
+        pushed = PUSHED_BY_STATE[state["push"]]
+    write_summary(render(
+        tag=env("RELEASE_TAG", "").strip(),
+        version=env("RELEASE_VERSION", "").strip(),
+        branch=env("BRANCH", "").strip(),
+        publish_only=env("PUBLISH_ONLY", "") == "true",
+        pushed=pushed,
+        state=state,
+        published=env("PUBLISHED", "") == "true",
+        rollback=env("ROLLBACK_OUTCOME", ""),
+        rollback_sha=env("ROLLBACK_SHA", ""),
+        release_sha=env("RELEASE_SHA", ""),
+    ))
 
 
 if __name__ == "__main__":

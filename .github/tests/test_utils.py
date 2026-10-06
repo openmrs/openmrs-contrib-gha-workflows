@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Tests for utils.py."""
 
+import io
+import json
 import os
+import subprocess
+import urllib.error
 import sys
 import tempfile
 import textwrap
@@ -224,3 +228,43 @@ class TestPublishablePackageNames(unittest.TestCase):
 
     def test_empty_input(self):
         self.assertEqual(utils.publishable_package_names([]), [])
+
+
+class TestNpmVersionState(unittest.TestCase):
+    def _respond(self, body=None, status=200, error=None):
+        if error is None and status != 200:
+            error = urllib.error.HTTPError("url", status, "err", {}, None)
+        if error is not None:
+            return patch.object(utils.urllib.request, "urlopen", side_effect=error)
+        response = io.BytesIO(json.dumps(body).encode())
+        response.__enter__ = lambda self=response: self
+        response.__exit__ = lambda *a: None
+        return patch.object(utils.urllib.request, "urlopen", return_value=response)
+
+    def test_live_on_exact_version(self):
+        with self._respond({"name": "@o/a", "version": "9.9.9"}):
+            self.assertEqual(utils.npm_version_state("@o/a", "9.9.9"), "live")
+
+    def test_missing_on_404(self):
+        with self._respond(status=404):
+            self.assertEqual(utils.npm_version_state("@o/a", "9.9.9"), "missing")
+
+    def test_unknown_on_other_http_errors(self):
+        for status in (401, 429, 503):
+            with self._respond(status=status):
+                self.assertEqual(utils.npm_version_state("@o/a", "9.9.9"), "unknown")
+
+    def test_unknown_on_network_error(self):
+        with self._respond(error=urllib.error.URLError("down")):
+            self.assertEqual(utils.npm_version_state("@o/a", "9.9.9"), "unknown")
+
+    def test_unknown_on_unexpected_body(self):
+        with self._respond({"version": "1.0.0"}):
+            self.assertEqual(utils.npm_version_state("@o/a", "9.9.9"), "unknown")
+
+    def test_requests_the_per_version_endpoint_with_token(self):
+        with self._respond({"version": "9.9.9"}) as urlopen:
+            utils.npm_version_state("@o/a", "9.9.9", token="secret")
+        request = urlopen.call_args[0][0]
+        self.assertEqual(request.full_url, "https://registry.npmjs.org/@o%2Fa/9.9.9")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
