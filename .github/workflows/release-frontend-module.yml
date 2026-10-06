@@ -516,6 +516,7 @@ jobs:
         run: ${{ steps.params.outputs.build_command }}
 
       - name: ⬆️ Push release commit and tag
+        id: push
         if: ${{ !inputs.publish_only }}
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
@@ -549,6 +550,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.tag.outputs.version }}
           BRANCH: ${{ steps.branch.outputs.name }}
           PUBLISH_ONLY: ${{ inputs.publish_only }}
+          PUSHED: ${{ steps.push.outcome == 'success' }}
         run: |
           {
             echo
@@ -561,7 +563,10 @@ jobs:
             exit 0
           fi
 
-          if ! git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+          # PUSHED is this run's own push outcome, not a probe of the remote: a
+          # tag being on the remote says nothing about who put it there, and
+          # publish-only always reuses one that was already pushed.
+          if [ "$PUBLISH_ONLY" != "true" ] && [ "$PUSHED" != "true" ]; then
             {
               echo "- **Tag \`$RELEASE_TAG\`:** not pushed"
               echo "- **npm:** nothing published"
@@ -571,11 +576,20 @@ jobs:
             exit 0
           fi
 
-          # The tag is on the remote, so the push succeeded and the failure came
-          # at or after publish. Work out how far the publish got.
+          # Either this run pushed the tag, or publish-only reused an existing
+          # one. Both mean the failure came at or after publish, so work out how
+          # far the publish got.
           LIVE=$(mktemp)
           MISSING=$(mktemp)
-          PKGS=$(yarn workspaces list --json --no-private 2>/dev/null | jq -r '.name' 2>/dev/null || true)
+          # Drop the root workspace when there are others: the inferred publish
+          # command excludes it by name (--exclude <root>), and --no-private
+          # keeps it whenever the root isn't marked private. Without this the
+          # report lists a root that was never meant to be published. A repo
+          # whose only workspace IS the root is a single-package repo, and there
+          # the root is the thing being published, so keep it.
+          PKGS=$(yarn workspaces list --json --no-private 2>/dev/null \
+            | jq -rs 'if length > 1 then map(select(.location != ".")) else . end | .[].name' 2>/dev/null \
+            || true)
           for PKG in $PKGS; do
             if [ "$(npm view "${PKG}@${RELEASE_VERSION}" version 2>/dev/null)" = "$RELEASE_VERSION" ]; then
               echo "  - \`${PKG}\`" >> "$LIVE"
