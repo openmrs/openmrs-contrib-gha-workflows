@@ -129,7 +129,8 @@ jobs:
   pre_release:
     name: Pre-release
     runs-on: ubuntu-latest
-    # Publish in commit order so the newest commit always ends up on `next`.
+    # Serialize pre-release publishes so an older run cannot overwrite `next`
+    # after a newer pre-release has been published.
     concurrency:
       group: pre-release-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
