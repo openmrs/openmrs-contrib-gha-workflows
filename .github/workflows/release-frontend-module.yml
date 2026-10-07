@@ -129,15 +129,18 @@ jobs:
   pre_release:
     name: Pre-release
     runs-on: ubuntu-latest
+    # Publish in commit order so the newest commit always ends up on `next`.
+    concurrency:
+      group: pre-release-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: false
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.repository_owner == 'openmrs'
       && inputs.release_type == '' && inputs.release_version == ''
       && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
-      && (github.event.head_commit == null || (
-        !startsWith(github.event.head_commit.message, '(chore) Release')
-        && !startsWith(github.event.head_commit.message, '(chore) Roll back release')))
+      && (github.event.head_commit == null 
+        || !contains(github.event.head_commit.message, '[skip-pre]'))
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -612,8 +615,8 @@ jobs:
           RELEASE_VERSION: ${{ steps.bump.outputs.version }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
-          # "(chore) Release" prefix keeps the pre_release job from firing on this push
-          # (as "(chore) Roll back release" does for roll-back-release.sh's revert).
+          # The release commit is pushed to main and triggers a pre-release like
+          # any other push, which moves `next` past the version being released.
           git add -u
           git commit -m "(chore) Release v${RELEASE_VERSION}" --no-verify
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
