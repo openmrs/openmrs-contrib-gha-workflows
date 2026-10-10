@@ -104,7 +104,7 @@ on:
         description: 'Git committer email for release commits (tagged-release mode)'
         type: string
         default: 'infrastructure@openmrs.org'
-      environment:
+      publish_environment:
         description: >-
           GitHub environment for the jobs that publish to npm. Set this to match the environment
           configured on the package's npm trusted publisher, if any.
@@ -135,15 +135,12 @@ jobs:
   pre_release:
     name: Pre-release
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.publish_environment }}
     # Serialize pre-release publishes so an older run cannot overwrite `next`
     # after a newer pre-release has been published.
     concurrency:
       group: pre-release-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
-    permissions:
-      contents: read
-      id-token: write
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -302,10 +299,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-      id-token: write
+    environment: ${{ inputs.publish_environment }}
 
     if: github.event_name == 'release' && github.repository_owner == 'openmrs'
 
@@ -382,7 +376,7 @@ jobs:
   tagged_release:
     name: Release to npm
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ inputs.publish_environment }}
     # Generous, so the per-step timeouts below fire first: a timed-out step is a
     # failure the recovery steps handle, whereas a job timeout may skip them.
     timeout-minutes: 120
@@ -390,9 +384,7 @@ jobs:
     concurrency:
       group: release-${{ github.repository }}
       cancel-in-progress: false
-    permissions:
-      contents: write
-      id-token: write
+    # No permissions block: inheriting the caller's lets it opt into id-token: write for npm OIDC.
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
       base_ref: ${{ steps.prev.outputs.base_ref }}
