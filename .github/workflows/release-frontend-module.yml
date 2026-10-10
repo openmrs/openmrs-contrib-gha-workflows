@@ -104,6 +104,12 @@ on:
         description: 'Git committer email for release commits (tagged-release mode)'
         type: string
         default: 'infrastructure@openmrs.org'
+      environment:
+        description: >-
+          GitHub environment for the jobs that publish to npm. Set this to match the environment
+          configured on the package's npm trusted publisher, if any.
+        type: string
+        default: ''
     secrets:
       NPM_AUTH_TOKEN:
         description: 'NPM authentication token for publishing'
@@ -129,6 +135,7 @@ jobs:
   pre_release:
     name: Pre-release
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     # Serialize pre-release publishes so an older run cannot overwrite `next`
     # after a newer pre-release has been published.
     concurrency:
@@ -295,6 +302,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -374,6 +382,7 @@ jobs:
   tagged_release:
     name: Release to npm
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     # Generous, so the per-step timeouts below fire first: a timed-out step is a
     # failure the recovery steps handle, whereas a job timeout may skip them.
     timeout-minutes: 120
