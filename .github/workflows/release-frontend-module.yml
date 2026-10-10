@@ -107,7 +107,7 @@ on:
     secrets:
       NPM_AUTH_TOKEN:
         description: 'NPM authentication token for publishing'
-        required: true
+        required: false
       APP_ID:
         description: >-
           GitHub App ID. Used for triggering the RefApp build (needs actions:write on
@@ -134,6 +134,9 @@ jobs:
     concurrency:
       group: pre-release-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -217,7 +220,9 @@ jobs:
 
       - name: 📤 Publish pre-release (main)
         if: github.ref_name == 'main'
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.pre_release_publish_command }}
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
+          ${{ steps.params.outputs.pre_release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
@@ -226,7 +231,9 @@ jobs:
           inputs.support_patch_branches
           && startsWith(github.ref_name, 'patch/')
           && steps.params.outputs.pre_release_patch_publish_command != ''
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.pre_release_patch_publish_command }}
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
+          ${{ steps.params.outputs.pre_release_patch_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
@@ -288,6 +295,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     if: github.event_name == 'release' && github.repository_owner == 'openmrs'
 
@@ -337,7 +347,9 @@ jobs:
         run: ${{ steps.params.outputs.build_command }}
 
       - name: 📢 Publish release
-        run: yarn config set npmAuthToken "${NODE_AUTH_TOKEN}" && ${{ steps.params.outputs.release_publish_command }}
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
+          ${{ steps.params.outputs.release_publish_command }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
 
@@ -371,6 +383,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
+      id-token: write
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
       base_ref: ${{ steps.prev.outputs.base_ref }}
@@ -660,7 +673,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
           PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
         run: |
-          yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"
+          if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
           for ATTEMPT in 1 2 3; do
             if bash -eo pipefail -c "$PUBLISH_COMMAND"; then
               exit 0
