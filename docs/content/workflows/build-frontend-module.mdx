@@ -1,0 +1,71 @@
+---
+title: Build frontend module
+description: Build, lint, type-check and test an O3 frontend module, and upload its build output.
+---
+
+import { Callout } from 'nextra/components'
+
+# Build frontend module
+
+`build-frontend-module.yml` installs dependencies, builds the module, runs its lint, type checks and tests, and
+uploads the build output as a workflow artifact. It is the CI half of the frontend pipeline; publishing is done by
+[Release frontend module](/workflows/release-frontend-module).
+
+## Usage
+
+```yaml filename=".github/workflows/ci.yml"
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-frontend-module.yml@main
+```
+
+Most repositories need no inputs: the workflow infers everything from `package.json`.
+
+## What it does
+
+1. Infers the Node.js version, commands and artifact paths from `package.json` (see [Inference](#inference)).
+2. Installs dependencies with `yarn install --immutable`.
+3. Runs the build command, then `pre_verify_command` if set, then the verify command.
+4. Uploads the build output as `<repository name>-packages`.
+
+When the repository has a `turbo.json`, Turborepo's cache is backed by the GitHub Actions cache.
+
+## Inference
+
+| Setting | Inferred from | Fallback |
+| --- | --- | --- |
+| Node.js version | `engines.node` in `package.json` | 22 |
+| Build command | `yarn turbo run build` when `turbo.json` exists, otherwise `yarn build` | |
+| Verify command | `yarn verify` | |
+| Artifact paths | `<workspace>/dist` for each `workspaces` glob in a monorepo | `dist` |
+
+For monorepos whose `verify` script is a turbo command, `--concurrency=<turbo_concurrency>` is appended, unless the
+script already sets `--concurrency`. Any input you pass overrides the inferred value.
+
+## OpenMRS defaults
+
+O3 repositories use the defaults above with no inputs, except where a repository needs an extra step before
+verification, such as `pre_verify_command: yarn check-translations`.
+
+## Outside OpenMRS
+
+<Callout type="info">
+The workflow supports Yarn Berry (2+) repositories with the project at the repository root. It does not run Yarn 1,
+npm or pnpm projects.
+</Callout>
+
+If your repository does not declare `engines.node`, the build runs on Node.js 22. Set `node_version` to match what
+you use locally.
+
+## Permissions
+
+The build job requests `contents: read` only.
+
+## Inputs
+
+<WorkflowReference id="workflows/build-frontend-module" section="inputs" />

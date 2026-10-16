@@ -1,0 +1,64 @@
+name: Documentation
+
+# Builds the docs site in docs/ and deploys it to the gh-pages branch whenever
+# main changes something that can affect it (the reference tables are generated
+# from the workflows and actions). Pull requests are built and previewed by
+# docs-preview.yml. GitHub Pages must be set to deploy from the gh-pages branch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+env:
+  # Path the site is served under. Set to '' once the site has a custom domain.
+  SITE_PATH: /${{ github.event.repository.name }}
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history gives each page its "last updated" date.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: docs/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: docs/.nvmrc
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+        env:
+          BASE_PATH: ${{ env.SITE_PATH }}
+
+      - uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
+        with:
+          folder: docs/out
+          branch: gh-pages
+          # Pull request previews live alongside the site; leave them in place.
+          clean-exclude: pr-preview/

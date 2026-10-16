@@ -1,0 +1,35 @@
+/* Matches the look of o3-docs (openmrs/openmrs-contrib-o3-docs) without its Tailwind build. */
+@import 'nextra-theme-docs/style.css';
+
+html {
+  font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1, "ss06" 1 !important;
+}
+
+body {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 1) 300px),
+    fixed 0 0 / 20px 20px radial-gradient(#d1d1d1 1px, transparent 0),
+    fixed 10px 10px / 20px 20px radial-gradient(#d1d1d1 1px, transparent 0);
+}
+
+.dark body {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, #111 300px),
+    fixed 0 0 / 20px 20px radial-gradient(#313131 1px, transparent 0),
+    fixed 10px 10px / 20px 20px radial-gradient(#313131 1px, transparent 0);
+}
+
+.markdown a {
+  color: #006be6;
+}
+
+.markdown code {
+  border-radius: 4px;
+}
+
+.markdown td {
+  padding: 6px 13px;
+  border: 1px solid #d0d7de;
+}
+
+.workflow-reference td:first-child {
+  white-space: nowrap;
+}

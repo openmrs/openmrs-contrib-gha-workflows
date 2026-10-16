@@ -14,6 +14,19 @@ updates:
     commit-message:
       prefix: ci
 
+  # The documentation site's dependencies, kept apart from the action pins so
+  # docs bumps never ride along with workflow changes.
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      docs:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: docs
+
   # npm packages the workflows install for their own use (e.g. semver), pinned
   # so every calling repository gets the same versions.
   - package-ecosystem: npm

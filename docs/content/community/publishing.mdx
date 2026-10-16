@@ -1,0 +1,68 @@
+---
+title: Publishing
+description: Where the workflows publish outside the OpenMRS organization, and how to authenticate.
+---
+
+import { Callout } from 'nextra/components'
+
+# Publishing
+
+## Names OpenMRS owns
+
+Outside the `openmrs` organization, the workflows will not publish to names OpenMRS owns on public registries. The usual
+cause is a fork that inherited an OpenMRS caller workflow.
+
+- **npm:** the run fails, since publishing there is not a supported setup. Set `publish: false` to build without
+  publishing.
+- **Maven:** SNAPSHOT deploys are skipped with a warning, so a fork's pushes still build; a release fails.
+
+| Ecosystem | Not published outside `openmrs` | Allowed |
+| --- | --- | --- |
+| npm | `@openmrs/*` and `openmrs` on `registry.npmjs.org` (or `registry.yarnpkg.com`) | Any other name; any name on another registry |
+| Maven | `mavenrepo.openmrs.org`; `openmrs.jfrog.io/artifactory/{modules,snapshots,releases}`; `org.openmrs*` groupIds on Maven Central | Any other repository, including other paths on `openmrs.jfrog.io` |
+
+A fork of an OpenMRS module publishes once you rename its packages (or change its POM's `<distributionManagement>`) to
+targets you own.
+
+## npm
+
+### Authentication
+
+The release workflow accepts either:
+
+- **Trusted publishing (recommended).** No long-lived token. On npmjs, configure a trusted publisher for each package
+  naming your repository, the **caller** workflow file (for example `ci.yml`) and, if you use one, the GitHub
+  environment. Then:
+  - grant the calling job `id-token: write`;
+  - use Yarn 4.10.3 or later (earlier versions cannot exchange the token for scoped packages);
+  - set `publish_environment` to the environment named on npmjs;
+  - keep each package's `repository.url` pointing at the publishing repository, since npm checks provenance against it.
+- **A token**, passed as the `NPM_AUTH_TOKEN` secret. If you keep it as an environment secret, name it
+  `NPM_AUTH_TOKEN`, set `publish_environment` to that environment, and still pass the secret from the caller.
+
+Without either, publishing fails before anything is built. Set `publish: false` to build pre-releases without
+publishing.
+
+<Callout type="warning">
+Renaming the caller workflow file breaks trusted publishing until the npm configuration is updated, and restarts
+`github.run_number`, which numbers pre-releases. A new file can collide with pre-release versions already on npm.
+</Callout>
+
+### Registries
+
+Packages publish wherever Yarn's configuration sends them: a package's `publishConfig.registry`, then the scope's
+`npmPublishRegistry` in `.yarnrc.yml`, then the top-level `npmPublishRegistry`, then `npmRegistryServer`. Set
+`npm_registry_url` to override the top-level registry from the workflow.
+
+The workflows are tested against npmjs. Other registries (GitHub Packages, Azure Artifacts, Verdaccio and so on) are
+supported but not tested; please [report problems](https://github.com/openmrs/openmrs-contrib-gha-workflows/issues).
+
+## Maven
+
+SNAPSHOT deploys and releases go to the repositories in the POM's `<distributionManagement>`, or to
+`maven_snapshot_repository_url` / `maven_release_repository_url` when set. They authenticate with the
+`MAVEN_REPO_USERNAME` and `MAVEN_REPO_API_KEY` secrets, which map to the inferred server IDs. A deploy without
+credentials fails; set `deploy_snapshots: false` to build without deploying.
+
+For signed releases (for example to Maven Central), pass `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`, and use
+`maven_profiles` to activate the profile that signs and publishes.
