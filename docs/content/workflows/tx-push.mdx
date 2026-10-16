@@ -1,0 +1,56 @@
+---
+title: Push translations
+description: Upload a repository's source strings to Transifex.
+---
+
+import { Callout } from 'nextra/components'
+
+# Push translations
+
+`tx-push.yml` uploads the repository's source strings to Transifex so translators can work on them. It is usually
+run when the source strings change on the default branch; its counterpart, [Pull translations](/workflows/tx-pull), brings
+the translations back.
+
+## Usage
+
+```yaml filename=".github/workflows/tx-push.yml"
+on:
+  push:
+    branches: [main]
+
+jobs:
+  push-translations:
+    if: github.repository_owner == 'openmrs'
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/tx-push.yml@main
+    secrets:
+      TRANSIFEX_TOKEN: ${{ secrets.TRANSIFEX_TOKEN }}
+```
+
+## What it does
+
+1. Checks out the repository.
+2. Runs the Transifex CLI with `transifex_args` (by default `push --source`), using the repository's `.tx/config`.
+
+## OpenMRS defaults
+
+OpenMRS repositories pass the organization's `TRANSIFEX_TOKEN` and use the default arguments.
+
+## Outside OpenMRS
+
+<Callout type="info">
+The Transifex workflows are for repositories in the OpenMRS organization, which share its Transifex project. They are
+not supported for use elsewhere.
+</Callout>
+
+## Permissions
+
+The job requests `actions: read` only. Because it declares a `permissions` block, it does not get `contents: read`,
+so it can only check out public repositories.
+
+## Inputs
+
+<WorkflowReference id="workflows/tx-push" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/tx-push" section="secrets" />

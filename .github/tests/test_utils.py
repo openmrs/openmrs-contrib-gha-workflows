@@ -267,3 +267,9 @@ class TestNpmVersionState(unittest.TestCase):
         request = urlopen.call_args[0][0]
         self.assertEqual(request.full_url, "https://registry.npmjs.org/@o%2Fa/9.9.9")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+
+    def test_queries_a_custom_registry(self):
+        with self._respond({"version": "9.9.9"}) as urlopen:
+            utils.npm_version_state("@o/a", "9.9.9", registry="https://npm.example.org/")
+        request = urlopen.call_args[0][0]
+        self.assertEqual(request.full_url, "https://npm.example.org/@o%2Fa/9.9.9")

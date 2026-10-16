@@ -1,0 +1,199 @@
+---
+title: Full examples
+description: Complete caller workflows for frontend and backend modules outside the OpenMRS GitHub organization.
+---
+
+import { Callout } from 'nextra/components'
+
+# Full examples
+
+These are complete caller workflows for a repository outside the `openmrs` organization. Replace the `acme` names,
+URLs and secret names with your own. Each workflow page lists every input; these examples only set what a typical
+implementer needs.
+
+## Frontend module on npmjs
+
+A frontend module usually has a single `ci.yml` that builds every push and pull request, then releases from the same
+run, so nothing is published unless the build passed:
+
+- every push to `main` publishes a pre-release to the `next` dist-tag;
+- running the workflow by hand cuts a tagged release, bumping the version, tagging it, publishing to `latest` and
+  creating a GitHub Release.
+
+```yaml filename=".github/workflows/ci.yml"
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release version bump'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      release_version:
+        description: 'Exact version to release, e.g. 2.1.0. Overrides the bump above.'
+        required: false
+      publish_only:
+        description: 'Only re-publish an existing release tag after a failed publish. Set the exact version too.'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-frontend-module.yml@main
+
+  release:
+    needs: build
+    permissions:
+      contents: write
+      id-token: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+    with:
+      release_type: ${{ inputs.release_type }}
+      release_version: ${{ inputs.release_version }}
+      publish_only: ${{ inputs.publish_only || false }}
+      publish_environment: npm-publish
+      git_user_name: acme-release-bot
+      git_user_email: release-bot@acme.example
+    secrets:
+      APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+```
+
+What this relies on:
+
+- **Trusted publishing.** Each package has a trusted publisher on npmjs naming this repository, `ci.yml` and the
+  `npm-publish` environment, which must exist under the repository's Settings → Environments. No npm token is passed;
+  see [Credentials](/workflows/release-frontend-module#credentials). A package that is not on npmjs yet needs one
+  first publish by hand or with a token.
+- **Pull requests.** The `release` job is called for pull requests too, but publishes nothing for them.
+- **Releases.** The workflow pushes a release commit and tag to `main`. `RELEASE_APP_ID` and
+  `RELEASE_APP_PRIVATE_KEY` belong to a GitHub App on `main`'s ruleset bypass list; with no protection on `main`, drop
+  the `secrets` block and the job's own token is used.
+- **Concurrency.** A new commit cancels an outdated pull request build. Runs on `main` are never cancelled once
+  started, but GitHub keeps only one waiting run per group, so a push that is still queued is replaced by a newer
+  push. The event name in the group keeps releases started by hand in a group of their own, so a burst of pushes
+  cannot drop a queued release.
+
+<Callout type="info">
+A fork of an OpenMRS frontend module cannot publish `@openmrs/*` packages to npmjs. Rename the packages to your own
+scope, publish to another registry (below), or keep only the `build` job.
+</Callout>
+
+## Frontend module on a private registry
+
+To publish to a registry other than npmjs, such as a company feed, point the release at it and pass a token. This works
+for `@openmrs/*` names too. Only npmjs is tested; other registries are supported on a best-effort basis.
+
+```yaml filename=".github/workflows/ci.yml"
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-frontend-module.yml@main
+
+  release:
+    needs: build
+    permissions:
+      contents: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+    with:
+      npm_registry_url: https://npm.acme.example/
+      release_type: ${{ inputs.release_type }}
+      release_version: ${{ inputs.release_version }}
+      publish_only: ${{ inputs.publish_only || false }}
+      git_user_name: acme-release-bot
+      git_user_email: release-bot@acme.example
+    secrets:
+      NPM_AUTH_TOKEN: ${{ secrets.ACME_NPM_TOKEN }}
+      APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+```
+
+The triggers and `concurrency` are the same as above. Instead of `npm_registry_url`, you can set `npmPublishRegistry`
+in `.yarnrc.yml` or `publishConfig.registry` in each `package.json`; see
+[Registry](/workflows/release-frontend-module#registry). If the build also installs packages from that registry,
+configure it in `.yarnrc.yml` as you would locally.
+
+## Backend module
+
+Backend modules usually keep two workflows: one that builds every push and deploys SNAPSHOTs, and a release started by
+hand once the build on the branch is green. The release does not run the tests again.
+
+```yaml filename=".github/workflows/build.yml"
+name: Build with Maven
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
+    with:
+      maven_snapshot_repository_url: https://maven.acme.example/repository/snapshots/
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.ACME_MAVEN_USER }}
+      MAVEN_REPO_API_KEY: ${{ secrets.ACME_MAVEN_TOKEN }}
+```
+
+```yaml filename=".github/workflows/release.yml"
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (defaults to the POM version without -SNAPSHOT)'
+        required: false
+      development_version:
+        description: 'Next development version (optional)'
+        required: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-backend-module.yml@main
+    with:
+      release_version: ${{ inputs.release_version }}
+      development_version: ${{ inputs.development_version }}
+      maven_release_repository_url: https://maven.acme.example/repository/releases/
+      maven_snapshot_repository_url: https://maven.acme.example/repository/snapshots/
+      git_user_name: acme-release-bot
+      git_user_email: release-bot@acme.example
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.ACME_MAVEN_USER }}
+      MAVEN_REPO_API_KEY: ${{ secrets.ACME_MAVEN_TOKEN }}
+      APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+```
+
+What this relies on:
+
+- **Deploy targets.** The repository URL inputs override `<distributionManagement>`, which in a fork of an OpenMRS
+  module usually still names OpenMRS repositories. If your POM already points at your own repositories, leave the
+  URL inputs out.
+- **Build only.** Without a Maven repository, drop the `secrets` and URL input from `build.yml` and set
+  `deploy_snapshots: false`.
+- **SCM.** The POM needs an `<scm>` section, but its URL may still name the upstream repository; the release pushes to
+  the repository running it.
+- **Maven Central.** To sign and publish with `central-publishing-maven-plugin`, set `maven_profiles` to the profile
+  that configures it, set `maven_release_server_id` to the plugin's `publishingServerId` (`central` by default) so
+  your Central token is written under that ID, and pass `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`. A fork cannot publish
+  `org.openmrs` groupIds there. The release's final step deploys the next SNAPSHOT with the same profile, so it goes
+  through the plugin too and fails unless SNAPSHOT publishing is enabled for your namespace on Central. That failure
+  comes after the release is published, and the GitHub Release is still created.

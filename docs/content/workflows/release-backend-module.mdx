@@ -1,0 +1,163 @@
+---
+title: Release backend module
+description: Release a Maven project with maven-release-plugin, deploy the release and the next SNAPSHOT, and create a GitHub Release.
+---
+
+import { Callout } from 'nextra/components'
+
+# Release backend module
+
+`release-backend-module.yml` cuts a Maven release with `maven-release-plugin`: it commits the release version, tags
+it, pushes both, deploys the tagged release, deploys the next development SNAPSHOT, and then creates a GitHub Release
+with generated notes. It works for any Maven project, not only OpenMRS modules.
+
+## Usage
+
+Releases are usually started by hand:
+
+```yaml filename=".github/workflows/release.yml"
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (defaults to the POM version without -SNAPSHOT)'
+        required: false
+      development_version:
+        description: 'Next development version'
+        required: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-backend-module.yml@main
+    with:
+      release_version: ${{ inputs.release_version }}
+      development_version: ${{ inputs.development_version }}
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
+      MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+      APP_ID: ${{ secrets.OMRS_MODULE_RELEASE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.OMRS_MODULE_RELEASE_APP_PRIVATE_KEY }}
+```
+
+## What it does
+
+1. Checks credentials: both Maven secrets must be set, and `APP_ID` / `APP_PRIVATE_KEY` must be set together or not
+   at all.
+2. Resolves the branch: `branch` if set, otherwise the triggering branch, which must be `main`, `master`, the
+   repository's default branch, or a version branch such as `2.x` or `2.8.x`.
+3. Resolves the versions (see [Versions](#versions)) and checks the release tag does not exist yet.
+4. Runs the [pre-release checks](#pre-release-checks).
+5. Writes `~/.m2/settings.xml` with credentials for the release and snapshot server IDs, and imports the GPG key if
+   one is given.
+6. Runs `release:prepare` and `release:perform` with `maven-release-plugin` (see [Plugin version](#plugin-version)),
+   using an empty local repository so nothing cached from earlier builds reaches the release. If `release:prepare`
+   fails, `release:rollback` is attempted.
+7. Deploys the next development SNAPSHOT with `mvn deploy -DskipTests` and the same profiles. If only this step
+   fails, the release itself is done and should not be repeated; the GitHub Release is still created.
+8. If `create_github_release` is true, waits for the tag to be visible, generates release notes against the previous
+   release of the same artifact, and creates the GitHub Release.
+
+<Callout type="info">
+Tests are skipped in the release builds. They are expected to have run in the build workflow
+([Build backend module](/workflows/build-backend-module) or [Build Maven project](/workflows/build-maven)) before a release is cut.
+</Callout>
+
+## Versions
+
+- **Release version:** `release_version`, or the POM version without `-SNAPSHOT`. If the POM version is not a
+  SNAPSHOT, `release_version` is required. Pre-release suffixes such as `-alpha`, `-beta.1` or `-rc.2` are valid
+  releases; `-SNAPSHOT` is not. On a version branch, the release version must start with the branch prefix
+  (`2.8.x` releases `2.8.*`).
+- **Development version:** `development_version` (`-SNAPSHOT` is appended if missing). If omitted, a pre-release such
+  as `1.2.0-beta.1` continues as `1.2.0-SNAPSHOT`, an `X.Y.0` release as `X.(Y+1).0-SNAPSHOT`, and any other release
+  leaves the choice to `maven-release-plugin`.
+- **Tag:** the plugin's `tagNameFormat` from the effective POM, defaulting to `@{project.artifactId}-@{project.version}`.
+  Only the `@{project.artifactId}` and `@{project.version}` placeholders are supported.
+- **GitHub Release:** a release with a pre-release suffix is marked as a prerelease and is not made the latest release.
+  Release notes compare against the latest stable release of the same artifact older than this one, so a `2.x` patch
+  does not diff against a newer `3.x` tag.
+
+## Plugin version
+
+The release uses the `maven-release-plugin` version the POM declares, raised to 3.1.1 if it is older. A POM that does
+not declare one gets 3.3.1. Maven itself pins a default version (2.5.3 before Maven 3.9, 3.0.1 since), which counts
+as not declared, so declaring exactly that version also gets 3.3.1.
+
+## Pre-release checks
+
+These run before anything is built, so a misconfigured repository fails in seconds:
+
+- **SCM:** the POM must have `<scm><developerConnection>` (or `<connection>`), which `maven-release-plugin` needs.
+  Whatever repository it names, the plugin's pushes and checkouts are redirected to the repository running the
+  release, so an outdated or upstream URL still works; a notice suggests updating it.
+- **Release target:** outside the `openmrs` org, the release fails if the release or snapshot repository is one
+  OpenMRS owns, or if it would publish an `org.openmrs` groupId to Maven Central (by URL or with
+  `central-publishing-maven-plugin`). The rules are the same as for [SNAPSHOT deploys](/workflows/build-maven#outside-openmrs).
+
+## Repositories and credentials
+
+The release and the next SNAPSHOT deploy to `<distributionManagement>` from the effective POM, unless
+`maven_release_repository_url` or `maven_snapshot_repository_url` is set, in which case they are passed to the deploy
+plugin as alternate repositories.
+
+Both server IDs get `MAVEN_REPO_USERNAME` and `MAVEN_REPO_API_KEY` in the generated `settings.xml`. The IDs are
+`maven_release_server_id` / `maven_snapshot_server_id` if set, otherwise those in `<distributionManagement>`,
+otherwise `openmrs-repo-modules` / `openmrs-repo-snapshots`. A repository that uses one ID for both is fine.
+
+## Signing and profiles
+
+- **GPG:** pass `GPG_PRIVATE_KEY` (ASCII-armored) and `GPG_PASSPHRASE` to sign artifacts. Without a key, nothing is
+  signed.
+- **Profiles:** `maven_profiles` activates comma-separated profiles for `maven-release-plugin`, its release builds and
+  the SNAPSHOT deploy, for example the profile that configures `maven-gpg-plugin` and `central-publishing-maven-plugin`
+  for Maven Central. The profiles are also active when the workflow reads the POM, so settings in a profile, such as
+  `<distributionManagement>` or the plugin's `tagNameFormat`, are used for the checks, server IDs and tag name. A
+  profile that is not activated does not count as publishing to Maven Central.
+- **Maven Central SNAPSHOTs:** with `central-publishing-maven-plugin` in the profile, the SNAPSHOT deploy after the
+  release also goes to Central, and fails unless SNAPSHOT publishing is enabled for your namespace. The release itself
+  is complete by then and the GitHub Release is still created.
+
+## Pushing the release
+
+The release commit and tag are pushed with, in order of preference, a GitHub App token (`APP_ID` +
+`APP_PRIVATE_KEY`), `BOT_PAT`, or `github.token`. A GitHub App token does not bypass branch protection on its own: add
+the App to the bypass list of any ruleset that protects the release branch. `github.token` cannot bypass protection,
+so with it the push fails later if the branch is protected.
+
+<Callout type="warning">
+App installation tokens expire after one hour. The push happens during `release:prepare`, before the longer
+`release:perform`, so this is rarely a problem. For an unusually slow build before the push, use `BOT_PAT`.
+</Callout>
+
+## OpenMRS defaults
+
+OpenMRS modules use the `OMRS_MODULE_RELEASE` GitHub App (installed on the module and on its ruleset bypass list) and
+the `MAVEN_REPO_USERNAME` / `MAVEN_REPO_API_KEY` org secrets. Deploy repositories come from the OpenMRS module parent
+POM, and release commits are authored as `openmrs-bot <infrastructure@openmrs.org>`.
+
+## Outside OpenMRS
+
+- Set `git_user_name` and `git_user_email`; the defaults identify the OpenMRS bot.
+- Check `<distributionManagement>`. Projects created from OpenMRS templates or forks often still point at OpenMRS
+  repositories, which the pre-release checks reject.
+- `maven-release-plugin` refuses to release with SNAPSHOT dependencies. Update them to released versions first.
+- Map differently named secrets in the caller, e.g. `MAVEN_REPO_USERNAME: ${{ secrets.MY_MAVEN_USER }}`.
+  `secrets: inherit` does not rename secrets.
+- If the POM has no `<distributionManagement>` (for example, the URL is normally passed on the command line), set
+  the repository URL inputs and, if needed, the server ID inputs.
+
+## Permissions
+
+Both jobs request `contents: write`, so the calling job must grant it.
+
+## Inputs
+
+<WorkflowReference id="workflows/release-backend-module" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/release-backend-module" section="secrets" />

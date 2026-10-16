@@ -1,0 +1,86 @@
+---
+title: Claude PR review
+description: An on-demand pull request review by Claude, triggered by a comment from an approved developer.
+---
+
+import { Callout } from 'nextra/components'
+
+# Claude PR review
+
+`claude-pr-review.yml` runs a code review by Claude when someone comments `@claude review` on a pull request. It never
+runs automatically when a pull request is opened. The review follows a shared review methodology (a `SKILL.md`
+file) and is posted as inline review comments; a review that finds nothing posts nothing and adds a 👍 reaction to the
+triggering comment instead.
+
+## Usage
+
+```yaml filename=".github/workflows/claude-pr-review.yml"
+name: Claude PR Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/claude-pr-review.yml@main
+    secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+```
+
+The caller must trigger on `issue_comment`: the workflow reads the comment and the pull request from that event.
+
+## What it does
+
+1. Skips unless the comment is on a pull request, was not written by a bot, and contains `@claude review`.
+2. Checks that the commenter is an active member of one of `reviewer_teams` in `reviewer_org`. If not, it stops with
+   a notice.
+3. Checks out the pull request head with full history.
+4. Downloads the review methodology from `skill_url` to a location outside the checkout, so a pull request cannot
+   substitute its own.
+5. Runs Claude with read-only tools. It is told never to run the pull request's code, builds or tests.
+6. If the review posted nothing, reacts with 👍 to the triggering comment.
+
+## Who can trigger it
+
+The gate is team membership because a GitHub Action cannot read OpenMRS developer stages directly. By default only
+members of the `openmrs` org's `dev-3`, `dev-4` and `dev-5` teams (developers at /dev/3 or above) can start a review.
+Comments from anyone else are ignored. Reading team membership needs a token with `read:org` whose owner is an org
+member, which is why `DEV_STAGE_READ_TOKEN` is required; the default `GITHUB_TOKEN` cannot read it.
+
+The review posts as `github-actions[bot]` using the workflow token rather than the Claude GitHub App, so that
+approved developers without write access to the repository can still trigger it.
+
+## OpenMRS defaults
+
+OpenMRS repositories use `secrets: inherit`, which passes the organization secrets `ANTHROPIC_API_KEY` and
+`DEV_STAGE_READ_TOKEN`. The methodology defaults to the `pr-review` skill in `openmrs/openmrs-module-querystore`. Pin
+`skill_url` (and the workflow ref) to a commit SHA if you want to control when changes to the methodology reach your
+repository.
+
+## Outside OpenMRS
+
+Set `reviewer_org` and `reviewer_teams` to your own organization and teams, and supply your own `ANTHROPIC_API_KEY`
+and a `read:org` token as `DEV_STAGE_READ_TOKEN`. Point `skill_url` at a review methodology you trust; the file must
+contain `name: pr-review`.
+
+<Callout type="info">
+Reviews are billed to the Anthropic API key supplied. `max_turns`, `timeout_minutes`, `model` and `effort` bound the
+cost of each run.
+</Callout>
+
+## Permissions
+
+The job requests `contents: read`, `pull-requests: write` and `issues: write`. It deliberately has no
+`id-token: write` and cannot push code.
+
+## Inputs
+
+<WorkflowReference id="workflows/claude-pr-review" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/claude-pr-review" section="secrets" />

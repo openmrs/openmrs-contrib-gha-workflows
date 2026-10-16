@@ -26,7 +26,7 @@ on:
         type: string
         default: ''
       pre_release_publish_command:
-        description: 'Command to publish a pre-release from the main branch. If omitted, inferred from package.json.'
+        description: 'Command to publish a pre-release from the default branch. If omitted, inferred from package.json.'
         type: string
         default: ''
       pre_release_patch_publish_command:
@@ -50,10 +50,45 @@ on:
         description: 'Whether to support patch/* branches for pre-releases'
         type: boolean
         default: false
-      trigger_refapp_build:
-        description: 'Whether to trigger the Reference Application frontend Docker image build after pre-release'
+      publish:
+        description: >-
+          Whether to publish to npm. When false, pre-releases build and upload artifacts without
+          publishing, and tagged releases refuse to run. When true, publishing fails unless
+          NPM_AUTH_TOKEN is set or the caller grants `id-token: write` for npm trusted publishing.
         type: boolean
         default: true
+      npm_registry_url:
+        description: >-
+          Registry to publish to, overriding `npmPublishRegistry` in .yarnrc.yml. Scoped registries
+          (`npmScopes`) and `publishConfig.registry` still take precedence. If omitted, Yarn's
+          configuration decides. Tested against npmjs only.
+        type: string
+        default: ''
+      turbo_concurrency:
+        description: >-
+          Turborepo --concurrency for the inferred build and verify commands. Not added where the
+          repo's own script already sets it. Empty for none.
+        type: string
+        default: '5'
+      trigger_downstream_build:
+        description: >-
+          Whether to dispatch `downstream_workflow` in `downstream_repository` after a pre-release
+          from the default branch. Without `downstream_repository`, repos in the openmrs org trigger
+          the Reference Application frontend build and other repos trigger nothing.
+        type: boolean
+        default: true
+      trigger_refapp_build:
+        description: 'Deprecated alias for trigger_downstream_build. Setting either to false disables the trigger.'
+        type: boolean
+        default: true
+      downstream_repository:
+        description: 'Repository (owner/name) whose workflow is dispatched after a pre-release from the default branch.'
+        type: string
+        default: ''
+      downstream_workflow:
+        description: 'Workflow file name or ID to dispatch in downstream_repository. Required when downstream_repository is set.'
+        type: string
+        default: ''
       artifact_path:
         description: 'Path(s) to build artifacts to upload (glob supported). If omitted, inferred from package.json.'
         type: string
@@ -69,7 +104,7 @@ on:
         type: string
         default: ''
       release_version:
-        description: 'Exact version to release (e.g., 12.4.0). When set, overrides release_type.'
+        description: 'Exact version to release (e.g., 12.4.0, or 12.4.0-beta.1 to publish to `next`). When set, overrides release_type.'
         type: string
         default: ''
       publish_only:
@@ -89,7 +124,7 @@ on:
         type: string
         default: ''
       tag_prefix:
-        description: 'Prefix for the release tag (tagged-release mode). O3 repos tag as v<version>.'
+        description: 'Prefix for release tags, stripped to get the version in legacy mode. O3 repos tag as v<version>.'
         type: string
         default: 'v'
       create_github_release:
@@ -116,24 +151,60 @@ on:
         required: false
       APP_ID:
         description: >-
-          GitHub App ID. Used for triggering the RefApp build (needs actions:write on
-          openmrs-distro-referenceapplication) and, in tagged-release mode, for pushing the release
-          commit and tag (needs contents:write on this repo and a place on the ruleset bypass list).
+          GitHub App ID. Used for triggering the downstream build (needs actions:write on the
+          downstream repository) and, in tagged-release mode, for pushing the release commit and
+          tag (needs contents:write on this repo and a place on the ruleset bypass list).
           When set with APP_PRIVATE_KEY, a short-lived App token is preferred over BOT_PAT.
         required: false
       APP_PRIVATE_KEY:
-        description: 'Private key for the distro bot GitHub App.'
+        description: 'Private key for the release bot GitHub App.'
         required: false
       BOT_PAT:
         description: >-
           Legacy GitHub PAT, fallback when App credentials are not provided. Needs actions:write on
-          openmrs-distro-referenceapplication for the RefApp build and, in tagged-release mode,
+          the downstream repository for the downstream build and, in tagged-release mode,
           permission to push past branch protection on this repo.
         required: false
 
 jobs:
+  # Outside the openmrs org, publishing names OpenMRS owns on public npm fails
+  # (see check_npm_publish_target.py).
+  publish_guard:
+    name: Check publish target
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'release'
+      || inputs.release_type != '' || inputs.release_version != ''
+      || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        && (github.ref_name == (github.event.repository.default_branch || 'main') || (inputs.support_patch_branches && startsWith(github.ref_name, 'patch/'))))
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.repository_owner != 'openmrs'
+
+      - name: Checkout shared scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: Use the configured npm registry
+        if: inputs.npm_registry_url != ''
+        env:
+          REGISTRY: ${{ inputs.npm_registry_url }}
+        run: echo "YARN_NPM_PUBLISH_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
+
+      - name: Check publish target
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          PUBLISH: ${{ inputs.publish }}
+        run: python3 .gha-workflows/.github/scripts/check_npm_publish_target.py
+
   pre_release:
     name: Pre-release
+    needs: publish_guard
     runs-on: ubuntu-latest
     environment: ${{ inputs.publish_environment }}
     # Serialize pre-release publishes so an older run cannot overwrite `next`
@@ -144,10 +215,9 @@ jobs:
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-      && github.repository_owner == 'openmrs'
       && inputs.release_type == '' && inputs.release_version == ''
-      && (github.ref_name == 'main' || startsWith(github.ref_name, 'patch/'))
-      && (github.event.head_commit == null 
+      && (github.ref_name == (github.event.repository.default_branch || 'main') || (inputs.support_patch_branches && startsWith(github.ref_name, 'patch/')))
+      && (github.event.head_commit == null
         || !contains(github.event.head_commit.message, '[skip-pre]'))
 
     steps:
@@ -156,13 +226,26 @@ jobs:
       - name: Checkout inference action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
+          repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
+            .github/tools
           sparse-checkout-cone-mode: false
           path: .gha-workflows
+
+      - name: 🔒 Verify npm credentials
+        if: inputs.publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: bash .gha-workflows/.github/scripts/verify-npm-credentials.sh
+
+      - name: Use the configured npm registry
+        if: inputs.npm_registry_url != ''
+        env:
+          REGISTRY: ${{ inputs.npm_registry_url }}
+        run: echo "YARN_NPM_PUBLISH_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
       - name: Infer frontend parameters
         id: params
@@ -174,13 +257,13 @@ jobs:
           pre_release_version_command: ${{ inputs.pre_release_version_command }}
           pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
           pre_release_patch_publish_command: ${{ inputs.pre_release_patch_publish_command }}
+          turbo_concurrency: ${{ inputs.turbo_concurrency }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: 🗂️ Cache node_modules
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -193,16 +276,31 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
+      # The version steps use this pinned semver rather than the repo's, which
+      # Plug'n'Play repos cannot `require` from a plain `node`. Installed outside
+      # the workspace so the node_modules cache never picks it up.
+      - name: 🧰 Install workflow tools
+        run: |
+          cp -R .gha-workflows/.github/tools "$RUNNER_TEMP/gha-tools"
+          npm ci --prefix "$RUNNER_TEMP/gha-tools" --ignore-scripts --no-audit --no-fund
 
       - name: 🏷️ Compute pre-release version
         id: version
         env:
           REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
           SUPPORT_PATCH: ${{ inputs.support_patch_branches }}
           RUN_NUMBER: ${{ github.run_number }}
+          CURRENT_VERSION_COMMAND: ${{ steps.params.outputs.current_version_command }}
+          SEMVER: ${{ runner.temp }}/gha-tools/node_modules/semver
         run: |
-          BASE_VERSION=$(node -e "console.log(require('semver').inc(require('./package.json').version, 'patch'))")
-          if [ "$REF_NAME" = "main" ] || [ "$SUPPORT_PATCH" != "true" ]; then
+          CURRENT_VERSION=$(bash -c "$CURRENT_VERSION_COMMAND")
+          BASE_VERSION=$(CURRENT_VERSION="$CURRENT_VERSION" node -e "console.log(require(process.env.SEMVER).inc(process.env.CURRENT_VERSION, 'patch') || '')")
+          if [ -z "$BASE_VERSION" ]; then
+            echo "::error::Current version '$CURRENT_VERSION' is not semver. Set \"version\" in package.json, or add a ci:current-version script that prints it."
+            exit 1
+          fi
+          if [ "$REF_NAME" = "$DEFAULT_BRANCH" ] || [ "$SUPPORT_PATCH" != "true" ]; then
             echo "version=${BASE_VERSION}-pre.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           else
             echo "version=${BASE_VERSION}-patch.${RUN_NUMBER}" >> "$GITHUB_OUTPUT"
@@ -222,8 +320,8 @@ jobs:
       - name: 💾 Commit version changes
         run: git add -u && git commit -m "Prerelease version" --no-verify
 
-      - name: 📤 Publish pre-release (main)
-        if: github.ref_name == 'main'
+      - name: 📤 Publish pre-release (default branch)
+        if: inputs.publish && github.ref_name == (github.event.repository.default_branch || 'main')
         run: |
           if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
           ${{ steps.params.outputs.pre_release_publish_command }}
@@ -232,7 +330,8 @@ jobs:
 
       - name: 📤 Publish pre-release (patch)
         if: >-
-          inputs.support_patch_branches
+          inputs.publish
+          && inputs.support_patch_branches
           && startsWith(github.ref_name, 'patch/')
           && steps.params.outputs.pre_release_patch_publish_command != ''
         run: |
@@ -259,9 +358,10 @@ jobs:
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-      && github.repository_owner == 'openmrs'
-      && github.ref_name == 'main'
-      && inputs.trigger_refapp_build
+      && github.ref_name == (github.event.repository.default_branch || 'main')
+      && inputs.publish
+      && inputs.trigger_downstream_build && inputs.trigger_refapp_build
+      && (inputs.downstream_repository != '' || github.repository_owner == 'openmrs')
       && inputs.release_type == '' && inputs.release_version == ''
 
     steps:
@@ -271,10 +371,36 @@ jobs:
           echo "::error::APP_ID and APP_PRIVATE_KEY must be set together — got one without the other. Check for a typo in the caller's secret names."
           exit 1
 
+      - name: Resolve downstream workflow
+        id: target
+        env:
+          REPOSITORY: ${{ inputs.downstream_repository }}
+          WORKFLOW: ${{ inputs.downstream_workflow }}
+        run: |
+          # Only openmrs repos reach this step without a repository (see the job's `if`).
+          if [ -z "$REPOSITORY" ]; then
+            REPOSITORY="openmrs/openmrs-distro-referenceapplication"
+            WORKFLOW="build-frontend.yml"
+          fi
+          if [[ ! "$REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "::error::downstream_repository must be in owner/name form (got '$REPOSITORY')"
+            exit 1
+          fi
+          if [ -z "$WORKFLOW" ]; then
+            echo "::error::downstream_workflow is required when downstream_repository is set"
+            exit 1
+          fi
+          {
+            echo "repository=$REPOSITORY"
+            echo "owner=${REPOSITORY%%/*}"
+            echo "name=${REPOSITORY#*/}"
+            echo "workflow=$WORKFLOW"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 🔒 Verify cross-repo dispatch credentials
         if: env.HAS_CREDS != 'true'
         run: |
-          echo "::error::Triggering the RefApp build needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_PAT. github.token cannot dispatch to another repository."
+          echo "::error::Triggering the downstream build needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_PAT. github.token cannot dispatch to another repository."
           exit 1
 
       - name: 🔑 Generate GitHub App token
@@ -284,38 +410,60 @@ jobs:
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-          owner: openmrs
-          repositories: openmrs-distro-referenceapplication
+          owner: ${{ steps.target.outputs.owner }}
+          repositories: ${{ steps.target.outputs.name }}
 
-      - name: 🚀 Trigger RefApp Frontend Docker Image Build
-        run: gh workflow run build-frontend.yml --repo openmrs/openmrs-distro-referenceapplication
+      - name: 🚀 Trigger downstream build
+        run: gh workflow run "$WORKFLOW" --repo "$REPOSITORY"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.BOT_PAT }}
+          REPOSITORY: ${{ steps.target.outputs.repository }}
+          WORKFLOW: ${{ steps.target.outputs.workflow }}
 
-  # Legacy mode: publishes the tag of a GitHub Release created by hand. Kept until
-  # callers move to tagged-release mode and drop `release: created` from their
-  # triggers. Releases created by the github_release job below raise no event, so
-  # the two modes never both publish the same version.
+  # Legacy mode: publishes the tag of a GitHub Release created by hand, at the
+  # tag's version, to `next` if the Release is a prerelease. Kept until callers
+  # move to tagged-release mode and drop `release: created` from their triggers.
+  # Releases created by the github_release job below raise no event, so the two
+  # modes never both publish the same version.
   release:
     name: Release
     runs-on: ubuntu-latest
     environment: ${{ inputs.publish_environment }}
 
-    if: github.event_name == 'release' && github.repository_owner == 'openmrs'
+    needs: publish_guard
+    if: github.event_name == 'release'
 
     steps:
+      - name: 🔒 Require publishing
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "::error::Releases publish to npm, so they cannot run with publish: false."
+          exit 1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout inference action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
+          repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
+            .github/tools
           sparse-checkout-cone-mode: false
           path: .gha-workflows
+
+      - name: 🔒 Verify npm credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: bash .gha-workflows/.github/scripts/verify-npm-credentials.sh
+
+      - name: Use the configured npm registry
+        if: inputs.npm_registry_url != ''
+        env:
+          REGISTRY: ${{ inputs.npm_registry_url }}
+        run: echo "YARN_NPM_PUBLISH_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
       - name: Infer frontend parameters
         id: params
@@ -325,14 +473,15 @@ jobs:
           build_command: ${{ inputs.build_command }}
           artifact_path: ${{ inputs.artifact_path }}
           release_publish_command: ${{ inputs.release_publish_command }}
-          resolve_pre_release: 'false'
+          release_version_command: ${{ inputs.release_version_command }}
+          pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
+          turbo_concurrency: ${{ inputs.turbo_concurrency }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: 🗂️ Cache node_modules
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -345,15 +494,56 @@ jobs:
       - name: 📦 Install dependencies
         run: yarn install --immutable
 
+      # The version steps use this pinned semver rather than the repo's, which
+      # Plug'n'Play repos cannot `require` from a plain `node`. Installed outside
+      # the workspace so the node_modules cache never picks it up.
+      - name: 🧰 Install workflow tools
+        run: |
+          cp -R .gha-workflows/.github/tools "$RUNNER_TEMP/gha-tools"
+          npm ci --prefix "$RUNNER_TEMP/gha-tools" --ignore-scripts --no-audit --no-fund
+
+      # The Release's tag is the version to publish, whether or not package.json
+      # was bumped to match before the Release was created.
+      - name: 🏷️ Set version from release tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_PREFIX: ${{ inputs.tag_prefix }}
+          CURRENT_VERSION_COMMAND: ${{ steps.params.outputs.current_version_command }}
+          RELEASE_VERSION_COMMAND: ${{ steps.params.outputs.release_version_command }}
+          SEMVER: ${{ runner.temp }}/gha-tools/node_modules/semver
+        run: |
+          TAG_VERSION="${TAG_NAME#"$TAG_PREFIX"}"
+          # npm drops build metadata, so v1.2.0+build.5 publishes 1.2.0.
+          RELEASE_VERSION=$(TAG_VERSION="$TAG_VERSION" node -p "
+            const v = require(process.env.SEMVER).parse(process.env.TAG_VERSION);
+            v && v.version + (v.build.length ? '+' + v.build.join('.') : '') === process.env.TAG_VERSION ? v.version : ''
+          ")
+          if [ -z "$RELEASE_VERSION" ]; then
+            echo "::error::Release tag '$TAG_NAME' is not '$TAG_PREFIX' followed by a semver version. Set tag_prefix if the repo tags differently."
+            exit 1
+          fi
+          CURRENT=$(bash -c "$CURRENT_VERSION_COMMAND")
+          if [ "$CURRENT" != "$RELEASE_VERSION" ]; then
+            echo "Setting version $CURRENT -> $RELEASE_VERSION from the release tag"
+            RELEASE_VERSION="$RELEASE_VERSION" bash -c "$RELEASE_VERSION_COMMAND"
+          fi
+          echo "- **Version:** \`$RELEASE_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 🏗️ Run build
         run: ${{ steps.params.outputs.build_command }}
 
+      # A prerelease goes out like a pre-release build, to `next`, so it never
+      # becomes `latest`.
       - name: 📢 Publish release
         run: |
           if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
-          ${{ steps.params.outputs.release_publish_command }}
+          bash -eo pipefail -c "$PUBLISH_COMMAND"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          PUBLISH_COMMAND: >-
+            ${{ github.event.release.prerelease
+                && steps.params.outputs.pre_release_publish_command
+                || steps.params.outputs.release_publish_command }}
 
       - name: 📤 Upload build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -380,7 +570,8 @@ jobs:
     # Generous, so the per-step timeouts below fire first: a timed-out step is a
     # failure the recovery steps handle, whereas a job timeout may skip them.
     timeout-minutes: 120
-    if: (inputs.release_type != '' || inputs.release_version != '') && github.repository_owner == 'openmrs'
+    needs: publish_guard
+    if: inputs.release_type != '' || inputs.release_version != ''
     concurrency:
       group: release-${{ github.repository }}
       cancel-in-progress: false
@@ -389,6 +580,7 @@ jobs:
       tag_name: ${{ steps.tag.outputs.name }}
       base_ref: ${{ steps.prev.outputs.base_ref }}
       is_latest: ${{ steps.prev.outputs.is_latest }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
@@ -409,6 +601,12 @@ jobs:
             echo "::error::publish_only needs release_version — it names the already-tagged version to build and publish."
             exit 1
           fi
+
+      - name: 🔒 Require publishing
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "::error::Tagged releases always publish to npm, so they cannot run with publish: false."
+          exit 1
 
       - name: Resolve branch
         id: branch
@@ -449,13 +647,25 @@ jobs:
       - name: Checkout inference action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
+          repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
+            .github/tools
           sparse-checkout-cone-mode: false
           path: .gha-workflows
+
+      - name: 🔒 Verify npm credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+        run: bash .gha-workflows/.github/scripts/verify-npm-credentials.sh
+
+      - name: Use the configured npm registry
+        if: inputs.npm_registry_url != ''
+        env:
+          REGISTRY: ${{ inputs.npm_registry_url }}
+        run: echo "YARN_NPM_PUBLISH_REGISTRY=$REGISTRY" >> "$GITHUB_ENV"
 
       - name: Infer frontend parameters
         id: params
@@ -466,8 +676,9 @@ jobs:
           artifact_path: ${{ inputs.artifact_path }}
           release_publish_command: ${{ inputs.release_publish_command }}
           release_version_command: ${{ inputs.release_version_command }}
+          pre_release_publish_command: ${{ inputs.pre_release_publish_command }}
           verify_command: ${{ inputs.verify_command }}
-          resolve_pre_release: 'false'
+          turbo_concurrency: ${{ inputs.turbo_concurrency }}
 
       # `run: ${{ ... }}` with an empty value is a no-op step that PASSES. If the
       # inference action resolves a command to nothing (checked out from the wrong
@@ -479,9 +690,10 @@ jobs:
           RELEASE_VERSION_COMMAND: ${{ steps.params.outputs.release_version_command }}
           RELEASE_PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
           VERIFY_COMMAND: ${{ steps.params.outputs.verify_command }}
+          CURRENT_VERSION_COMMAND: ${{ steps.params.outputs.current_version_command }}
         run: |
           STATUS=0
-          for NAME in BUILD_COMMAND RELEASE_VERSION_COMMAND RELEASE_PUBLISH_COMMAND VERIFY_COMMAND; do
+          for NAME in BUILD_COMMAND RELEASE_VERSION_COMMAND RELEASE_PUBLISH_COMMAND VERIFY_COMMAND CURRENT_VERSION_COMMAND; do
             if [ -z "${!NAME}" ]; then
               echo "::error::infer-frontend-params resolved $NAME to an empty string. Is the action checked out at the right ref, and new enough to provide it?"
               STATUS=1
@@ -494,10 +706,17 @@ jobs:
         with:
           node-version: ${{ steps.params.outputs.node_version }}
           cache: 'yarn'
-          registry-url: 'https://registry.npmjs.org'
 
       - name: 📦 Install dependencies
         run: yarn install --immutable
+
+      # The version steps use this pinned semver rather than the repo's, which
+      # Plug'n'Play repos cannot `require` from a plain `node`. Installed outside
+      # the workspace so the node_modules cache never picks it up.
+      - name: 🧰 Install workflow tools
+        run: |
+          cp -R .gha-workflows/.github/tools "$RUNNER_TEMP/gha-tools"
+          npm ci --prefix "$RUNNER_TEMP/gha-tools" --ignore-scripts --no-audit --no-fund
 
       - name: 🔧 Configure Git
         if: ${{ !inputs.publish_only }}
@@ -514,6 +733,7 @@ jobs:
         env:
           RELEASE_TYPE: ${{ inputs.release_type }}
           CUSTOM_VERSION: ${{ inputs.release_version }}
+          CURRENT_VERSION_COMMAND: ${{ steps.params.outputs.current_version_command }}
         run: |
           # A custom version, when given, overrides the release type.
           if [ -n "$CUSTOM_VERSION" ]; then
@@ -529,7 +749,12 @@ jobs:
           fi
           echo "value=$ARG" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
-          echo "current=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          CURRENT=$(bash -c "$CURRENT_VERSION_COMMAND")
+          if [ -z "$CURRENT" ]; then
+            echo "::error::Could not read the current version. Set \"version\" in package.json, or add a ci:current-version script that prints it."
+            exit 1
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
 
       # The version command accepts a strategy (patch/minor/major) or an exact
       # version, the same as `yarn release <type|version>` locally.
@@ -545,13 +770,15 @@ jobs:
         env:
           RELEASE_TYPE: ${{ steps.arg.outputs.label }}
           OLD: ${{ steps.arg.outputs.current }}
+          CURRENT_VERSION_COMMAND: ${{ steps.params.outputs.current_version_command }}
+          SEMVER: ${{ runner.temp }}/gha-tools/node_modules/semver
         run: |
-          NEW=$(node -p "require('./package.json').version")
-          if [[ ! "$NEW" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "::error::Version after bump is '$NEW', expected stable semver like 12.4.0 (no 'v' prefix, no pre-release suffix)"
+          NEW=$(bash -c "$CURRENT_VERSION_COMMAND")
+          if [ "$(NEW="$NEW" node -p "require(process.env.SEMVER).valid(process.env.NEW) || ''")" != "$NEW" ] || [[ "$NEW" == *+* ]]; then
+            echo "::error::Version after bump is '$NEW', expected semver like 12.4.0 or 12.4.0-beta.1 (no 'v' prefix, no build metadata)"
             exit 1
           fi
-          if [ "$(node -p "require('semver').gt('$NEW', '$OLD')")" != "true" ]; then
+          if [ "$(NEW="$NEW" node -p "require(process.env.SEMVER).gt(process.env.NEW, process.env.OLD)")" != "true" ]; then
             echo "::error::New version $NEW is not greater than current version $OLD"
             exit 1
           fi
@@ -587,6 +814,12 @@ jobs:
           TAG_NAME="${TAG_PREFIX}${RELEASE_VERSION}"
           echo "name=$TAG_NAME" >> "$GITHUB_OUTPUT"
           echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          # Pre-release versions (e.g. 12.4.0-beta.1) publish to `next`, not `latest`.
+          if [[ "$RELEASE_VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
           if [ "$PUBLISH_ONLY" = "true" ]; then
             # The bump step writes this header in a normal run.
             {
@@ -627,13 +860,12 @@ jobs:
         id: commit
         if: ${{ !inputs.publish_only }}
         env:
-          RELEASE_VERSION: ${{ steps.bump.outputs.version }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
         run: |
-          # The release commit is pushed to main and triggers a pre-release like
+          # The release commit is pushed to the default branch and triggers a pre-release like
           # any other push, which moves `next` past the version being released.
           git add -u
-          git commit -m "(chore) Release v${RELEASE_VERSION}" --no-verify
+          git commit -m "(chore) Release ${RELEASE_TAG}" --no-verify
           git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -672,7 +904,11 @@ jobs:
         timeout-minutes: 20
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
-          PUBLISH_COMMAND: ${{ steps.params.outputs.release_publish_command }}
+          PUBLISH_COMMAND: >-
+            ${{ steps.tag.outputs.prerelease == 'true'
+                && steps.params.outputs.pre_release_publish_command
+                || steps.params.outputs.release_publish_command }}
+          PUBLISH_LOG: ${{ runner.temp }}/published.txt
         run: |
           if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
           for ATTEMPT in 1 2 3; do
@@ -700,8 +936,8 @@ jobs:
         timeout-minutes: 10
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+          PUBLISH_LOG: ${{ runner.temp }}/published.txt
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
-          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
           PUSH_OUTCOME: ${{ steps.push.outcome }}
           PUBLISH_ONLY: ${{ inputs.publish_only }}
           PUBLISH_RAN: ${{ steps.publish.outcome == 'failure' || steps.publish.outcome == 'cancelled' }}
@@ -728,7 +964,6 @@ jobs:
           PUSH_TOKEN: ${{ steps.rollback-token.outputs.token }}
           BRANCH: ${{ steps.branch.outputs.name }}
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
-          RELEASE_VERSION: ${{ steps.tag.outputs.version }}
           RELEASE_SHA: ${{ steps.commit.outputs.sha }}
         run: bash .gha-workflows/.github/scripts/roll-back-release.sh
 
@@ -757,13 +992,14 @@ jobs:
     steps:
       - name: Wait for tag to be reachable
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.tagged_release.outputs.tag_name }}
           REPO: ${{ github.repository }}
         run: |
           MAX_RETRIES=5
           DELAY=15
           for i in $(seq 1 "$MAX_RETRIES"); do
-            if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            if gh api "repos/$REPO/git/ref/tags/$RELEASE_TAG" --silent > /dev/null 2>&1; then
               echo "Tag $RELEASE_TAG is reachable (attempt $i/$MAX_RETRIES)"
               exit 0
             fi
@@ -796,7 +1032,7 @@ jobs:
         if: steps.existing.outputs.exists != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
+          repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           sparse-checkout: .github/scripts
           sparse-checkout-cone-mode: false
@@ -834,5 +1070,5 @@ jobs:
           name: ${{ needs.tagged_release.outputs.tag_name }}
           body_path: ${{ runner.temp }}/release-notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.tagged_release.outputs.prerelease == 'true' }}
           make_latest: ${{ needs.tagged_release.outputs.is_latest }}

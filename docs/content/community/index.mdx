@@ -1,0 +1,105 @@
+---
+title: Getting started
+description: Using the OpenMRS workflows from a repository outside the OpenMRS GitHub organization.
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Other organizations
+
+Implementers can call these workflows from their own GitHub organizations to build, test and publish OpenMRS
+frontend and backend modules under their own npm scopes and Maven repositories. Forks work too, including forks of
+OpenMRS repositories.
+
+This page covers the minimum setup. For complete caller workflows, including tagged releases, see
+[Full examples](/community/examples).
+
+## What changes outside OpenMRS
+
+| Behaviour | Inside `openmrs` | Elsewhere |
+| --- | --- | --- |
+| Publishing `@openmrs/*` or `openmrs` to the public npm registry | Allowed | Fails; set `publish: false` to build only |
+| Deploying to OpenMRS Maven repositories, or `org.openmrs*` groupIds to Maven Central | Allowed | Skipped with a warning; a release fails |
+| Reference Application build after a frontend pre-release | On by default | Only if you set `downstream_repository` |
+
+The restrictions only cover names and repositories OpenMRS owns publicly. Publishing `@openmrs/my-package` to a private
+registry, or deploying to your own Maven repository, works as usual. See [Publishing](/community/publishing).
+
+## Setting up a frontend module
+
+<Steps>
+
+### Check the repository fits
+
+The workflows support [Yarn Berry projects at the repository root](/community/repository-requirements). Repositories
+created from the O3 template already fit.
+
+### Choose how to authenticate to npm
+
+Either configure [npm trusted publishing](/community/publishing#npm) for each package (recommended), or store an npm
+token as a secret.
+
+### Add the caller workflow
+
+```yaml filename=".github/workflows/ci.yml"
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-frontend-module.yml@main
+
+  release:
+    needs: build
+    permissions:
+      contents: write
+      id-token: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+```
+
+Pushes to the default branch publish a pre-release to the `next` dist-tag, using
+[npm trusted publishing](/community/publishing#npm). Only if you cannot use it, pass a token as the `NPM_AUTH_TOKEN`
+secret. See
+[Release frontend module](/workflows/release-frontend-module) for tagged releases.
+
+</Steps>
+
+## Setting up a backend module
+
+```yaml filename=".github/workflows/build.yml"
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
+    with:
+      # Optional: deploy SNAPSHOTs somewhere other than <distributionManagement>.
+      maven_snapshot_repository_url: https://maven.example.org/snapshots
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.MY_MAVEN_USER }}
+      MAVEN_REPO_API_KEY: ${{ secrets.MY_MAVEN_PASSWORD }}
+```
+
+Without Maven credentials, set `deploy_snapshots: false`; otherwise a deploy from the default branch fails. Releases
+use [Release backend module](/workflows/release-backend-module).
+
+## Things to know
+
+<Callout type="info">
+**Secret names.** The workflows declare fixed secret names. `secrets: inherit` passes your secrets under their own
+names and does not rename them, so map differently named secrets explicitly, as above.
+</Callout>
+
+- **Caller permissions.** A called workflow cannot be granted more than its caller. Give the calling job every
+  permission the workflow's jobs request (listed on each workflow page), or the run fails at startup.
+- **Versions.** Call the workflows at `@main` until versioned tags are published.
+- **Branch protection.** Release workflows push a commit and tag to your default branch. If it is protected, put the
+  GitHub App, or the owner of the token you pass, on the ruleset bypass list; see
+  [Bot authentication](/openmrs/authentication).
+- **Conventions are opt-in.** The PR title and description checks encode OpenMRS conventions; use them only if you
+  follow those conventions. The Transifex and OWASP Dependency-Check workflows are for OpenMRS repositories only.

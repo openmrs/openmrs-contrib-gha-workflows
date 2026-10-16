@@ -168,7 +168,10 @@ class TestMonorepoWithoutCiScripts(_FrontendParamsTestBase):
         self.assertIn(
             "--exclude @openmrs/esm-new-mono", result["release_publish_command"]
         )
-        self.assertIn("npm publish --access public", result["release_publish_command"])
+        self.assertIn(
+            f'exec bash "{infer.SCRIPTS_DIR}/publish-package.sh" --access public',
+            result["release_publish_command"],
+        )
         self.assertNotIn("--tag", result["release_publish_command"])
         self.assertIn("--tolerate-republish", result["release_publish_command"])
 
@@ -230,20 +233,94 @@ class TestSingleApp(_FrontendParamsTestBase):
         result = infer.infer_params(path, self.tmpdir)
         self.assertEqual(result["is_monorepo"], "false")
         self.assertEqual(result["enable_turborepo_cache"], "true")
-        # Single-app repos should NOT set these (workflow defaults apply)
         self.assertNotIn("artifact_path", result)
         self.assertNotIn("pre_release_version_command", result)
-        self.assertNotIn("pre_release_publish_command", result)
-        self.assertNotIn("release_publish_command", result)
         self.assertNotIn("release_version_command", result)
         self.assertNotIn("verify_command", result)
+        publish = f'bash "{infer.SCRIPTS_DIR}/publish-package.sh" --access public'
+        self.assertEqual(
+            result["pre_release_publish_command"], f"{publish} --tag next --tolerate-republish"
+        )
+        self.assertEqual(result["release_publish_command"], f"{publish} --tolerate-republish")
 
-    def test_single_app_no_build_command_when_turbo_exists(self):
-        """When turbo.json is present, build_command should not be overridden."""
+    def test_single_app_uses_ci_publish_scripts(self):
+        path = self._write_package_json(
+            {
+                "name": "@acme/esm-app",
+                "scripts": {"ci:prepublish": "...", "ci:publish": "..."},
+            }
+        )
+        result = infer.infer_params(path, self.tmpdir)
+        self.assertEqual(result["pre_release_publish_command"], "yarn run ci:prepublish")
+        self.assertEqual(result["release_publish_command"], "yarn run ci:publish")
+
+    def test_single_app_turbo_build_command(self):
         path = self._write_package_json({"name": "test-app"})
         self._write_turbo_json()
         result = infer.infer_params(path, self.tmpdir)
-        self.assertNotIn("build_command", result)
+        self.assertEqual(result["build_command"], "yarn turbo run build --color --concurrency=5")
+
+
+class TestConcurrency(_FrontendParamsTestBase):
+    def _infer(self, verify=None, concurrency=None):
+        scripts = {} if verify is None else {"verify": verify}
+        path = self._write_package_json(
+            {"name": "@o/mono", "workspaces": ["packages/*"], "scripts": scripts}
+        )
+        self._write_turbo_json()
+        return infer.infer_params(path, self.tmpdir, concurrency=concurrency)
+
+    def test_appends_to_a_turbo_verify(self):
+        self.assertEqual(
+            self._infer("turbo run lint test")["verify_command"], "yarn verify --concurrency=5"
+        )
+
+    def test_keeps_a_verify_that_sets_its_own(self):
+        result = self._infer("turbo run lint test --concurrency=1")
+        self.assertEqual(result["verify_command"], "yarn verify")
+
+    def test_skips_a_verify_ending_in_another_command(self):
+        result = self._infer("turbo run lint && jest")
+        self.assertEqual(result["verify_command"], "yarn verify")
+
+    def test_appends_to_a_chain_ending_in_turbo(self):
+        result = self._infer("yarn lint && turbo run test")
+        self.assertEqual(result["verify_command"], "yarn verify --concurrency=5")
+
+    def test_uses_the_given_concurrency(self):
+        result = self._infer("turbo run test", concurrency="2")
+        self.assertEqual(result["verify_command"], "yarn verify --concurrency=2")
+        self.assertEqual(result["build_command"], "yarn turbo run build --color --concurrency=2")
+
+    def test_empty_concurrency_omits_the_flag(self):
+        result = self._infer("turbo run test", concurrency="")
+        self.assertEqual(result["verify_command"], "yarn verify")
+        self.assertEqual(result["build_command"], "yarn turbo run build --color")
+
+
+class TestVersionScripts(_FrontendParamsTestBase):
+    def _infer(self, scripts, monorepo=True):
+        pkg = {"name": "@o/root", "scripts": scripts}
+        if monorepo:
+            pkg["workspaces"] = ["packages/*"]
+        return infer.infer_params(self._write_package_json(pkg), self.tmpdir)
+
+    def test_ci_version_sets_both_version_commands(self):
+        for monorepo in (True, False):
+            result = self._infer({"ci:version": "lerna version"}, monorepo)
+            self.assertEqual(
+                result["pre_release_version_command"], 'yarn run ci:version "$PRERELEASE_VERSION"'
+            )
+            self.assertEqual(
+                result["release_version_command"], 'yarn run ci:version "$RELEASE_VERSION"'
+            )
+
+    def test_ci_current_version_reads_the_version(self):
+        result = self._infer({"ci:current-version": "node -p ..."})
+        self.assertEqual(result["current_version_command"], "yarn run --silent ci:current-version")
+
+    def test_no_current_version_command_without_the_script(self):
+        self.assertNotIn("current_version_command", self._infer({}))
 
 
 class TestNoTurboJson(_FrontendParamsTestBase):
