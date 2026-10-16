@@ -469,9 +469,7 @@ class TestFindServerIds(unittest.TestCase):
                 </repository>
               </distributionManagement>
             </project>""")
-        release_id, snapshot_id = infer.find_server_ids(proj)
-        self.assertEqual(release_id, "my-releases")
-        self.assertIsNone(snapshot_id)
+        self.assertEqual(infer.find_server_ids(proj), ("my-releases", "my-releases"))
 
     def test_only_snapshot(self):
         proj = parse_project("""\
@@ -531,6 +529,88 @@ class TestFindServerIds(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # POM project version
 # ---------------------------------------------------------------------------
+
+class TestFindRepositoryUrls(unittest.TestCase):
+    def test_both_urls(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <repository><id>r</id><url> https://example.com/releases </url></repository>
+                <snapshotRepository><id>s</id><url>https://example.com/snapshots</url></snapshotRepository>
+              </distributionManagement>
+            </project>""")
+        self.assertEqual(
+            infer.find_repository_urls(proj),
+            ("https://example.com/releases", "https://example.com/snapshots"),
+        )
+
+    def test_no_distribution_management(self):
+        proj = parse_project('<project xmlns="http://maven.apache.org/POM/4.0.0"/>')
+        self.assertEqual(infer.find_repository_urls(proj), (None, None))
+
+    def test_snapshots_fall_back_to_repository(self):
+        proj = parse_project("""\
+            <project xmlns="http://maven.apache.org/POM/4.0.0">
+              <distributionManagement>
+                <repository><id>github</id><url>https://maven.pkg.github.com/acme/x</url></repository>
+              </distributionManagement>
+            </project>""")
+        self.assertEqual(
+            infer.find_repository_urls(proj),
+            ("https://maven.pkg.github.com/acme/x", "https://maven.pkg.github.com/acme/x"),
+        )
+
+
+class TestFindGroupIds(unittest.TestCase):
+    def test_distinct_sorted_with_parent_fallback(self):
+        projects = [
+            parse_project("<project><groupId>org.openmrs.module</groupId></project>"),
+            parse_project("<project><parent><groupId>org.openmrs.module</groupId></parent></project>"),
+            parse_project("<project><groupId>org.example</groupId></project>"),
+        ]
+        self.assertEqual(infer.find_group_ids(projects), ["org.example", "org.openmrs.module"])
+
+
+class TestFindScmConnections(unittest.TestCase):
+    def test_developer_connection_first(self):
+        proj = parse_project("""\
+            <project><scm>
+              <connection>scm:git:https://github.com/a/b.git</connection>
+              <developerConnection>scm:git:git@github.com:a/b.git</developerConnection>
+            </scm></project>""")
+        self.assertEqual(
+            infer.find_scm_connections(proj),
+            ["scm:git:git@github.com:a/b.git", "scm:git:https://github.com/a/b.git"],
+        )
+
+    def test_connection_only_and_duplicates(self):
+        proj = parse_project("""\
+            <project><scm>
+              <connection>scm:git:https://github.com/a/b</connection>
+              <developerConnection>scm:git:https://github.com/a/b</developerConnection>
+            </scm></project>""")
+        self.assertEqual(infer.find_scm_connections(proj), ["scm:git:https://github.com/a/b"])
+
+    def test_empty_without_scm(self):
+        self.assertEqual(infer.find_scm_connections(parse_project("<project/>")), [])
+
+
+class TestUsesCentralPublishing(unittest.TestCase):
+    PLUGIN = "<plugins><plugin><groupId>org.sonatype.central</groupId><artifactId>central-publishing-maven-plugin</artifactId></plugin></plugins>"
+
+    def test_build_plugin(self):
+        proj = parse_project(f"<project><build>{self.PLUGIN}</build></project>")
+        self.assertTrue(infer.uses_central_publishing([proj]))
+
+    def test_profile_plugin(self):
+        proj = parse_project(f"<project><profiles><profile><build>{self.PLUGIN}</build></profile></profiles></project>")
+        self.assertTrue(infer.uses_central_publishing([proj]))
+        self.assertFalse(infer.uses_central_publishing([proj], include_profiles=False))
+
+    def test_plugin_management_only(self):
+        proj = parse_project(f"<project><build><pluginManagement>{self.PLUGIN}</pluginManagement></build></project>")
+        self.assertFalse(infer.uses_central_publishing([proj]))
+
 
 class TestFindProjectVersion(unittest.TestCase):
     def test_direct_version(self):

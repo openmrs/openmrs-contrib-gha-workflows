@@ -1,6 +1,6 @@
 name: Infer Backend Parameters
 description: >
-  Infer Java versions, Maven server IDs, and project version from pom.xml.
+  Infer Java versions, Maven server IDs and URLs, and project coordinates from pom.xml.
   Accepts optional explicit overrides; falls back to inference, then empty.
 
 inputs:
@@ -18,6 +18,10 @@ inputs:
     default: ''
   release_server_id:
     description: 'Override: Maven release server ID'
+    required: false
+    default: ''
+  maven_profiles:
+    description: 'Comma-separated Maven profiles to activate when reading the effective POM'
     required: false
     default: ''
 
@@ -40,6 +44,24 @@ outputs:
   project_artifact_id:
     description: 'POM project artifactId (always inferred, never overridden)'
     value: ${{ steps.infer.outputs.project_artifact_id }}
+  release_repository_url:
+    description: 'distributionManagement release repository URL, or empty'
+    value: ${{ steps.infer.outputs.release_repository_url }}
+  snapshot_repository_url:
+    description: 'distributionManagement snapshot repository URL, or empty'
+    value: ${{ steps.infer.outputs.snapshot_repository_url }}
+  group_ids:
+    description: 'JSON array of the groupIds of every module in the build'
+    value: ${{ steps.infer.outputs.group_ids }}
+  central_publishing:
+    description: '"true" when the build or any of its profiles uses central-publishing-maven-plugin'
+    value: ${{ steps.infer.outputs.central_publishing }}
+  central_publishing_active:
+    description: '"true" when the build uses central-publishing-maven-plugin without activating a profile'
+    value: ${{ steps.infer.outputs.central_publishing_active }}
+  scm_connections:
+    description: 'JSON array of the POM scm developerConnection and connection'
+    value: ${{ steps.infer.outputs.scm_connections }}
   release_tag_format:
     description: >
       maven-release-plugin tagNameFormat from the effective POM, or the
@@ -53,9 +75,14 @@ runs:
     - name: Generate effective POM
       id: effective_pom
       shell: bash
+      env:
+        MAVEN_PROFILES: ${{ inputs.maven_profiles }}
       run: |
         POM_PATH="${RUNNER_TEMP}/effective-pom.xml"
-        mvn -B -q help:effective-pom -Doutput="${POM_PATH}"
+        ARGS=(-B -q help:effective-pom -Doutput="${POM_PATH}")
+        PROFILES="$(echo "$MAVEN_PROFILES" | tr -d '[:space:]')"
+        if [ -n "$PROFILES" ]; then ARGS+=("-P$PROFILES"); fi
+        mvn "${ARGS[@]}"
         echo "path=${POM_PATH}" >> "$GITHUB_OUTPUT"
 
     - name: Infer parameters from effective POM

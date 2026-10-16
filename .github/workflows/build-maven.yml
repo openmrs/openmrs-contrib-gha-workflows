@@ -21,15 +21,19 @@ on:
         description: 'Stage JaCoCo reports as a coverage-reports artifact for the upload-coverage workflow to send to Codecov. Set "false" to skip; otherwise staged when JaCoCo reports are found.'
         type: string
       deploy_snapshots:
-        description: 'Whether to deploy SNAPSHOT artifacts to the Maven repository'
+        description: 'Whether to deploy SNAPSHOT artifacts to the Maven repository. When true, a deploy without MAVEN_REPO_USERNAME and MAVEN_REPO_API_KEY fails.'
         type: boolean
         default: true
       deploy_branch:
-        description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment. If omitted, deploys from main, master, and version branches (e.g. 3.x, 2.8.x).'
+        description: 'Branch name or JSON array of branch names that trigger SNAPSHOT deployment. If omitted, deploys from main, master, the default branch, and version branches (e.g. 3.x, 2.8.x).'
         type: string
       maven_server_id:
         description: 'Maven server ID to use for SNAPSHOT deployment. If omitted, inferred from <distributionManagement><snapshotRepository><id> in pom.xml.'
         type: string
+      maven_snapshot_repository_url:
+        description: 'Repository URL to deploy SNAPSHOTs to instead of <distributionManagement><snapshotRepository>.'
+        type: string
+        default: ''
     secrets:
       MAVEN_REPO_USERNAME:
         description: 'Maven repository username'
@@ -48,6 +52,8 @@ jobs:
       snapshot_server_id: ${{ steps.deploy.outputs.snapshot_server_id }}
       deploy_branches: ${{ steps.deploy.outputs.deploy_branches }}
       is_snapshot: ${{ steps.deploy.outputs.is_snapshot }}
+      deploy_allowed: ${{ steps.target.outputs.allowed }}
+      has_snapshot_target: ${{ (inputs.maven_snapshot_repository_url || steps.infer.outputs.snapshot_repository_url) != '' || steps.infer.outputs.central_publishing_active == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,8 +63,8 @@ jobs:
       - name: Checkout shared actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -100,6 +106,30 @@ jobs:
           inferred_snapshot_server_id: ${{ steps.infer.outputs.snapshot_server_id }}
           deploy_branch: ${{ inputs.deploy_branch }}
           ref_name: ${{ github.ref_name }}
+          default_branch: ${{ github.event.repository.default_branch }}
+
+      - name: 🔒 Check SNAPSHOT target
+        id: target
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TARGET_URL: ${{ inputs.maven_snapshot_repository_url || steps.infer.outputs.snapshot_repository_url }}
+          GROUP_IDS: ${{ steps.infer.outputs.group_ids }}
+          CENTRAL_PUBLISHING: ${{ steps.infer.outputs.central_publishing }}
+        run: python3 .gha-workflows/.github/scripts/maven_publish_checks.py target
+
+      # Typically a fork that inherits the OpenMRS parent POM's repositories. Only
+      # warns where the deploy job would otherwise have run.
+      - name: Skip SNAPSHOT deploy to an OpenMRS repository
+        if: >-
+          steps.target.outputs.allowed != 'true'
+          && inputs.deploy_snapshots
+          && steps.deploy.outputs.is_snapshot == 'true'
+          && github.head_ref == ''
+          && contains(fromJSON(steps.deploy.outputs.deploy_branches), github.ref_name)
+        env:
+          REASON: ${{ steps.target.outputs.reason }}
+        run: |
+          echo "::warning::Skipping SNAPSHOT deploy: $REASON, and only repositories in the openmrs org deploy there. Set maven_snapshot_repository_url or <distributionManagement> to deploy elsewhere, or deploy_snapshots: false to silence this."
 
   build:
     name: Build with Java ${{ matrix.java }}
@@ -119,8 +149,8 @@ jobs:
       - name: Checkout shared actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -142,7 +172,7 @@ jobs:
     if: >-
       inputs.deploy_snapshots
       && needs.prepare.outputs.is_snapshot == 'true'
-      && github.repository_owner == 'openmrs'
+      && needs.prepare.outputs.deploy_allowed == 'true'
       && github.head_ref == ''
       && contains(fromJSON(needs.prepare.outputs.deploy_branches), github.ref_name)
     runs-on: ubuntu-latest
@@ -150,14 +180,20 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Check SNAPSHOT repository
+        if: needs.prepare.outputs.has_snapshot_target != 'true'
+        run: |
+          echo "::error::There is nowhere to deploy SNAPSHOTs: the POM has no <distributionManagement><snapshotRepository> and maven_snapshot_repository_url is not set. Set one of them, or set deploy_snapshots: false to build without deploying."
+          exit 1
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Checkout shared actions
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -172,3 +208,4 @@ jobs:
           server_id: ${{ needs.prepare.outputs.snapshot_server_id }}
           maven_repo_username: ${{ secrets.MAVEN_REPO_USERNAME }}
           maven_repo_api_key: ${{ secrets.MAVEN_REPO_API_KEY }}
+          repository_url: ${{ inputs.maven_snapshot_repository_url }}

@@ -23,6 +23,10 @@ inputs:
   ref_name:
     description: 'The branch ref name of the running workflow (github.ref_name)'
     required: true
+  default_branch:
+    description: "The repository's default branch (github.event.repository.default_branch), deployed alongside main and master"
+    required: false
+    default: ''
 
 outputs:
   snapshot_server_id:
@@ -66,6 +70,7 @@ runs:
         INPUT_DEPLOY_BRANCH: ${{ inputs.deploy_branch }}
         REF_NAME: ${{ inputs.ref_name }}
         POM_VERSION: ${{ inputs.project_version }}
+        DEFAULT_BRANCH: ${{ inputs.default_branch }}
       run: |
         if [ -n "$INPUT_DEPLOY_BRANCH" ]; then
           if echo "$INPUT_DEPLOY_BRANCH" | jq -e 'type == "array"' > /dev/null 2>&1; then
@@ -74,9 +79,9 @@ runs:
             echo "branches=$(jq -nc --arg v "$INPUT_DEPLOY_BRANCH" '[$v]')" >> "$GITHUB_OUTPUT"
           fi
         else
-          # Auto-detect: main, master, and version branches (e.g. 3.x, 2.8.x)
+          # Auto-detect: main, master, the default branch, and version branches (e.g. 3.x, 2.8.x)
           # Version branches are only added if the POM version matches the branch prefix
-          BRANCHES='["main", "master"]'
+          BRANCHES=$(jq -nc --arg d "$DEFAULT_BRANCH" '["main", "master"] + (if $d == "" then [] else [$d] end) | unique')
           if echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
             PREFIX="${REF_NAME%.x}."
             if [[ "$POM_VERSION" == "$PREFIX"* ]]; then
