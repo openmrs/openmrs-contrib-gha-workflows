@@ -349,6 +349,24 @@ def find_release_tag_format(project):
     return None
 
 
+def find_release_plugin_version(project):
+    """Return the maven-release-plugin version in the effective POM, or None.
+
+    Maven's super POM pins a version of its own (2.5.3 before Maven 3.9, 3.0.1
+    since), so a version here does not mean the project chose it.
+    """
+    for path in ("build/plugins", "build/pluginManagement/plugins"):
+        plugins = project.find(path)
+        if plugins is None:
+            continue
+        for plugin in plugins.findall("plugin"):
+            if plugin.findtext("artifactId", "") == "maven-release-plugin":
+                version = (plugin.findtext("version") or "").strip()
+                if version:
+                    return version
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -406,6 +424,7 @@ def main():
             "project_version": project_version,
             "project_artifact_id": project_artifact_id,
             "release_tag_format": release_tag_format,
+            "release_plugin_version": find_release_plugin_version(primary),
         }
     )
 

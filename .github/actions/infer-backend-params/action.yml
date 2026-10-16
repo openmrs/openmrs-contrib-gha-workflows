@@ -62,6 +62,9 @@ outputs:
   scm_connections:
     description: 'JSON array of the POM scm developerConnection and connection'
     value: ${{ steps.infer.outputs.scm_connections }}
+  release_plugin_version:
+    description: "maven-release-plugin version in the effective POM, which may be Maven's own default"
+    value: ${{ steps.infer.outputs.release_plugin_version }}
   release_tag_format:
     description: >
       maven-release-plugin tagNameFormat from the effective POM, or the

@@ -595,6 +595,21 @@ class TestFindScmConnections(unittest.TestCase):
         self.assertEqual(infer.find_scm_connections(parse_project("<project/>")), [])
 
 
+class TestFindReleasePluginVersion(unittest.TestCase):
+    def test_build_plugins_then_plugin_management(self):
+        proj = parse_project("""\
+            <project><build>
+              <plugins><plugin><artifactId>maven-release-plugin</artifactId><version>3.2.0</version></plugin></plugins>
+              <pluginManagement><plugins>
+                <plugin><artifactId>maven-release-plugin</artifactId><version>2.5.3</version></plugin>
+              </plugins></pluginManagement>
+            </build></project>""")
+        self.assertEqual(infer.find_release_plugin_version(proj), "3.2.0")
+
+    def test_none_without_the_plugin(self):
+        self.assertIsNone(infer.find_release_plugin_version(parse_project("<project/>")))
+
+
 class TestUsesCentralPublishing(unittest.TestCase):
     PLUGIN = "<plugins><plugin><groupId>org.sonatype.central</groupId><artifactId>central-publishing-maven-plugin</artifactId></plugin></plugins>"
 
