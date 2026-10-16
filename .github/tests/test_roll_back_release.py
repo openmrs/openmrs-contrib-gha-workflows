@@ -67,7 +67,6 @@ class RollBackReleaseTest(unittest.TestCase):
             **os.environ,
             "BRANCH": "main",
             "RELEASE_TAG": "v1.0.1",
-            "RELEASE_VERSION": "1.0.1",
             "RELEASE_SHA": self.release_sha,
             "RETRY_DELAY": "0",
             "GITHUB_OUTPUT": self.github_output,

@@ -12,7 +12,6 @@
 # Environment:
 #   BRANCH           branch the release commit was pushed to
 #   RELEASE_TAG      tag to delete
-#   RELEASE_VERSION  version being rolled back, for the commit message
 #   RELEASE_SHA      the release commit to revert
 #   RETRY_DELAY      seconds between push attempts (default 10)
 #   PUSH_TOKEN       optional GitHub token to use instead of the credentials
@@ -42,7 +41,7 @@ for ATTEMPT in 1 2 3; do
     exit 1
   fi
   git commit --quiet --no-verify \
-    -m "(chore) Roll back release v${RELEASE_VERSION}" \
+    -m "(chore) Roll back release ${RELEASE_TAG}" \
     -m "Publishing to npm failed and nothing was published, so tag $RELEASE_TAG was removed."
   REVERT_SHA=$(git rev-parse HEAD)
   if git push --atomic origin "HEAD:refs/heads/$BRANCH" ":refs/tags/$RELEASE_TAG"; then

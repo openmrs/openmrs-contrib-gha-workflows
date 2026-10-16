@@ -13,3 +13,12 @@ updates:
           - "*"
     commit-message:
       prefix: ci
+
+  # npm packages the workflows install for their own use (e.g. semver), pinned
+  # so every calling repository gets the same versions.
+  - package-ecosystem: npm
+    directory: /.github/tools
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
