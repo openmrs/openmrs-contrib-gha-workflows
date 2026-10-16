@@ -66,6 +66,7 @@ class MavenReleaseTest(unittest.TestCase):
             self.assertIn("-DreleaseVersion=1.3.3", call)
             self.assertIn("-DdevelopmentVersion=1.4.0-SNAPSHOT", call)
             self.assertIn("-Darguments=-DskipTests -Pci", call)
+            self.assertIn("-Pci", call)
             self.assertTrue(any(a.startswith(f"-Dmaven.repo.local={self._tmpdir.name}") for a in call))
 
     def test_runs_the_requested_plugin_version(self):

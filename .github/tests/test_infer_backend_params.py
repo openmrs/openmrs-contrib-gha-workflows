@@ -617,10 +617,9 @@ class TestUsesCentralPublishing(unittest.TestCase):
         proj = parse_project(f"<project><build>{self.PLUGIN}</build></project>")
         self.assertTrue(infer.uses_central_publishing([proj]))
 
-    def test_profile_plugin(self):
+    def test_inactive_profile_plugin(self):
         proj = parse_project(f"<project><profiles><profile><build>{self.PLUGIN}</build></profile></profiles></project>")
-        self.assertTrue(infer.uses_central_publishing([proj]))
-        self.assertFalse(infer.uses_central_publishing([proj], include_profiles=False))
+        self.assertFalse(infer.uses_central_publishing([proj]))
 
     def test_plugin_management_only(self):
         proj = parse_project(f"<project><build><pluginManagement>{self.PLUGIN}</pluginManagement></build></project>")

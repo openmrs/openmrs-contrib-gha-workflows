@@ -112,10 +112,11 @@ otherwise `openmrs-repo-modules` / `openmrs-repo-snapshots`. A repository that u
 
 - **GPG:** pass `GPG_PRIVATE_KEY` (ASCII-armored) and `GPG_PASSPHRASE` to sign artifacts. Without a key, nothing is
   signed.
-- **Profiles:** `maven_profiles` activates comma-separated profiles in the release builds and the SNAPSHOT deploy, for
-  example the profile that configures `maven-gpg-plugin` and `central-publishing-maven-plugin` for Maven Central. The
-  profiles are also active when the workflow reads the POM, so `<distributionManagement>` set in a profile is used for
-  the checks and server IDs.
+- **Profiles:** `maven_profiles` activates comma-separated profiles for `maven-release-plugin`, its release builds and
+  the SNAPSHOT deploy, for example the profile that configures `maven-gpg-plugin` and `central-publishing-maven-plugin`
+  for Maven Central. The profiles are also active when the workflow reads the POM, so settings in a profile, such as
+  `<distributionManagement>` or the plugin's `tagNameFormat`, are used for the checks, server IDs and tag name. A
+  profile that is not activated does not count as publishing to Maven Central.
 - **Maven Central SNAPSHOTs:** with `central-publishing-maven-plugin` in the profile, the SNAPSHOT deploy after the
   release also goes to Central, and fails unless SNAPSHOT publishing is enabled for your namespace. The release itself
   is complete by then and the GitHub Release is still created.

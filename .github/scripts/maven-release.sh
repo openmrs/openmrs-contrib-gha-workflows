@@ -17,7 +17,7 @@
 #       default.
 #   -v  maven-release-plugin version to run (default 3.1.1)
 #   -s  skip tests in the release builds
-#   -p  Maven profile to activate in the release builds and the SNAPSHOT deploy; repeatable
+#   -p  Maven profile to activate for the release plugin, its builds and the SNAPSHOT deploy; repeatable
 #   -D  system property for the release builds and the SNAPSHOT deploy, e.g.
 #       altReleaseDeploymentRepository=id::default::url; repeatable, no whitespace
 
@@ -33,6 +33,7 @@ DEV_VERSION=""
 PLUGIN_VERSION="3.1.1"
 FORKED_ARGS=""
 DEPLOY_ARGS=()
+PROFILE_ARGS=()
 
 while getopts "r:d:v:p:sD:" opt; do
   case $opt in
@@ -40,6 +41,7 @@ while getopts "r:d:v:p:sD:" opt; do
     d) DEV_VERSION=$OPTARG ;;
     v) PLUGIN_VERSION=$OPTARG ;;
     p)
+      PROFILE_ARGS+=("-P$OPTARG")
       DEPLOY_ARGS+=("-P$OPTARG")
       FORKED_ARGS="${FORKED_ARGS:+$FORKED_ARGS }-P$OPTARG" ;;
     s) FORKED_ARGS="${FORKED_ARGS:+$FORKED_ARGS }-DskipTests" ;;
@@ -61,6 +63,8 @@ RELEASE_PLUGIN="org.apache.maven.plugins:maven-release-plugin:$PLUGIN_VERSION"
 LOCAL_REPO=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/release.XXXXXXX")
 # -Darguments must stay one token so the forked release builds receive every flag.
 ARGS=(-B -Dmaven.repo.local="$LOCAL_REPO" -DreleaseVersion="$RELEASE_VERSION" -Darguments="$FORKED_ARGS")
+# The plugin reads its own configuration (e.g. tagNameFormat) with these profiles too.
+ARGS+=(${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"})
 
 if [ -n "$DEV_VERSION" ]; then
   ARGS+=(-DdevelopmentVersion="${DEV_VERSION%-SNAPSHOT}-SNAPSHOT")

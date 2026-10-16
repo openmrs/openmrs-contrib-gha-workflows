@@ -54,11 +54,8 @@ outputs:
     description: 'JSON array of the groupIds of every module in the build'
     value: ${{ steps.infer.outputs.group_ids }}
   central_publishing:
-    description: '"true" when the build or any of its profiles uses central-publishing-maven-plugin'
+    description: '"true" when the build, with its active profiles, uses central-publishing-maven-plugin'
     value: ${{ steps.infer.outputs.central_publishing }}
-  central_publishing_active:
-    description: '"true" when the build uses central-publishing-maven-plugin without activating a profile'
-    value: ${{ steps.infer.outputs.central_publishing_active }}
   scm_connections:
     description: 'JSON array of the POM scm developerConnection and connection'
     value: ${{ steps.infer.outputs.scm_connections }}

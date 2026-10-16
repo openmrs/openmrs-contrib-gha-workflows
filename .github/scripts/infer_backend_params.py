@@ -278,23 +278,20 @@ def find_scm_connections(project):
     return connections
 
 
-def uses_central_publishing(projects, include_profiles=True):
-    """True if any module configures central-publishing-maven-plugin.
+def uses_central_publishing(projects):
+    """True if any module's build configures central-publishing-maven-plugin.
 
-    With `include_profiles`, plugins in any of the module's own profiles count,
-    whether or not the profile is active; otherwise only the active build's.
-    pluginManagement is ignored: declaring the plugin there does not use it.
+    Only the effective build counts: profiles that are active are already merged
+    into it, and inactive ones cannot publish. pluginManagement is ignored, since
+    declaring the plugin there does not use it.
     """
     for project in projects:
-        sections = [project.find("build/plugins")]
-        if include_profiles:
-            sections += project.findall("profiles/profile/build/plugins")
-        for plugins in sections:
-            if plugins is None:
-                continue
-            for plugin in plugins.findall("plugin"):
-                if (plugin.findtext("artifactId") or "").strip() == "central-publishing-maven-plugin":
-                    return True
+        plugins = project.find("build/plugins")
+        if plugins is None:
+            continue
+        for plugin in plugins.findall("plugin"):
+            if (plugin.findtext("artifactId") or "").strip() == "central-publishing-maven-plugin":
+                return True
     return False
 
 
@@ -420,7 +417,6 @@ def main():
             "group_ids": json.dumps(find_group_ids(projects)),
             "scm_connections": json.dumps(find_scm_connections(primary)),
             "central_publishing": str(uses_central_publishing(projects)).lower(),
-            "central_publishing_active": str(uses_central_publishing(projects, include_profiles=False)).lower(),
             "project_version": project_version,
             "project_artifact_id": project_artifact_id,
             "release_tag_format": release_tag_format,

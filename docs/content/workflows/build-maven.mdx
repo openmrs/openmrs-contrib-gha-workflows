@@ -81,7 +81,7 @@ that would otherwise have deployed:
 - `openmrs.jfrog.io/artifactory/` under `modules`, `snapshots` or `releases` (other repositories on that host, such as
   `modules-pih`, are allowed);
 - Maven Central (any `maven.org`, `maven.apache.org`, `sonatype.com` or `sonatype.org` host, or a build using
-  `central-publishing-maven-plugin`), when a module's groupId is `org.openmrs` or starts with `org.openmrs.`.
+  `central-publishing-maven-plugin` outside an inactive profile), when a module's groupId is `org.openmrs` or starts with `org.openmrs.`.
 
 This usually means a fork inherited those repositories from the OpenMRS parent POM. Point
 `<distributionManagement>` or `maven_snapshot_repository_url` at your own repository, or set
