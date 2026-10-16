@@ -83,8 +83,8 @@ jobs:
       - name: Checkout inference scripts and resources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -105,7 +105,8 @@ jobs:
         env:
           INFERRED: ${{ steps.infer-backend.outputs.main_java_version }}
         run: |
-          echo "version=${INFERRED:-21}" >> "$GITHUB_OUTPUT"
+          # Matches release-backend-module.yml and maven-compiler-plugin's default target.
+          echo "version=${INFERRED:-8}" >> "$GITHUB_OUTPUT"
 
       - name: Infer Node.js version from package.json
         id: infer-node

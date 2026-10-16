@@ -20,14 +20,13 @@ permissions:
 jobs:
   upload:
     name: Upload coverage to Codecov
-    if: github.repository_owner == 'openmrs'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout shared scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: .github/scripts
           sparse-checkout-cone-mode: false
           path: .gha-workflows
