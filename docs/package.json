@@ -10,15 +10,15 @@
     "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/post-export.mjs"
   },
   "dependencies": {
-    "next": "15.5.18",
+    "next": "16.4.2",
     "nextra": "4.6.1",
     "nextra-theme-docs": "4.6.1",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "pagefind": "1.5.2",
-    "yaml": "2.9.0"
+    "yaml": "2.9.1"
   },
   "packageManager": "pnpm@11.21.0"
 }
