@@ -132,11 +132,13 @@ def infer_params(path="package.json", base_dir=None, concurrency=None):
                 'yarn workspaces foreach --all --topological version "$RELEASE_VERSION"'
             )
 
+        # Yarn refuses to publish private workspaces, so skip them.
+        publish_foreach = f"{foreach} --no-private"
         outputs["pre_release_publish_command"] = (
-            f"{foreach} exec {publish} --tag next --tolerate-republish"
+            f"{publish_foreach} exec {publish} --tag next --tolerate-republish"
         )
         outputs["release_publish_command"] = (
-            f"{foreach} exec {publish} --tolerate-republish"
+            f"{publish_foreach} exec {publish} --tolerate-republish"
         )
     else:
         outputs["is_monorepo"] = "false"

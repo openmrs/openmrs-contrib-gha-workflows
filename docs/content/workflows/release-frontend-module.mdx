@@ -173,9 +173,9 @@ The workflow reads `package.json` to choose its commands. Any input you pass ove
 | Set pre-release version | `ci:version` script, else `yarn workspaces foreach ... version` (monorepo) or `yarn version` |
 | Set release version | `ci:version` script, else `yarn workspaces foreach --all --topological version` (monorepo) or `yarn version` |
 | Read current version | `ci:current-version` script, else `version` in the root `package.json` |
-| Pre-release publish | `ci:prepublish` or `ci:publish-next` script, else a recorded `yarn npm publish --tag next` per package |
+| Pre-release publish | `ci:prepublish` or `ci:publish-next` script, else a recorded `yarn npm publish --tag next` per non-private package |
 | Patch pre-release publish | `ci:prepublish-patch` script, else none |
-| Release publish | `ci:publish` script, else a recorded `yarn npm publish --tolerate-republish` per package |
+| Release publish | `ci:publish` script, else a recorded `yarn npm publish --tolerate-republish` per non-private package |
 | Build, verify, artifacts, Node.js | As in [Build frontend module](/workflows/build-frontend-module#inference) |
 
 ### Version scripts
@@ -226,6 +226,10 @@ Pass an npm token as `NPM_AUTH_TOKEN` when trusted publishing is not an option: 
 package, or for a registry other than npmjs that does not support it. Prefer a granular token scoped to the packages
 being published.
 
+The workflow hands the token to Yarn. A custom publish command that uses the npm CLI instead also receives it as
+`NODE_AUTH_TOKEN`, but must configure npm to use it, e.g. with an `.npmrc` containing
+`//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`.
+
 The job fails early when neither a token nor trusted publishing is available, or when trusted publishing is the only
 option and Yarn is older than 4.10.3.
 
@@ -244,7 +248,7 @@ registries.
 ## Publish guard
 
 Outside the `openmrs` GitHub organization, `publish` defaults to `false`, so a fork that inherits a caller workflow
-builds pre-releases without publishing, and a release run by hand fails. Turn it on from the repository owner, so that
+skips pre-releases, and a release run by hand fails. Turn it on from the repository owner, so that
 forks of your repository do not publish either:
 
 ```yaml

@@ -54,8 +54,8 @@ on:
         description: >-
           Whether to publish to npm. Defaults to true in the openmrs org and false elsewhere, so forks
           that inherit a caller workflow do not publish; outside the openmrs org, set it from an
-          expression such as `github.repository_owner == 'my-org'`. When false, pre-releases build
-          and upload artifacts without publishing, and releases refuse to run. When true, publishing
+          expression such as `github.repository_owner == 'my-org'`. When false, pre-releases are
+          skipped and releases refuse to run. When true, publishing
           fails unless NPM_AUTH_TOKEN is set or the caller grants `id-token: write` for npm trusted
           publishing.
         type: boolean
@@ -218,6 +218,7 @@ jobs:
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && inputs.publish
       && inputs.release_type == '' && inputs.release_version == ''
       && (github.ref_name == (github.event.repository.default_branch || 'main') || (inputs.support_patch_branches && startsWith(github.ref_name, 'patch/')))
       && (github.event.head_commit == null
@@ -239,7 +240,6 @@ jobs:
           path: .gha-workflows
 
       - name: 🔒 Verify npm credentials
-        if: inputs.publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
         run: bash .gha-workflows/.github/scripts/verify-npm-credentials.sh
@@ -324,7 +324,7 @@ jobs:
         run: git add -u && git commit -m "Prerelease version" --no-verify
 
       - name: 📤 Publish pre-release (default branch)
-        if: inputs.publish && github.ref_name == (github.event.repository.default_branch || 'main')
+        if: github.ref_name == (github.event.repository.default_branch || 'main')
         run: |
           if [ -n "${NODE_AUTH_TOKEN}" ]; then yarn config set npmAuthToken "${NODE_AUTH_TOKEN}"; fi
           ${{ steps.params.outputs.pre_release_publish_command }}
@@ -333,8 +333,7 @@ jobs:
 
       - name: 📤 Publish pre-release (patch)
         if: >-
-          inputs.publish
-          && inputs.support_patch_branches
+          inputs.support_patch_branches
           && startsWith(github.ref_name, 'patch/')
           && steps.params.outputs.pre_release_patch_publish_command != ''
         run: |

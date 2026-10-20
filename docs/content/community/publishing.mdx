@@ -37,8 +37,7 @@ The release workflow accepts either:
 - **A token**, passed as the `NPM_AUTH_TOKEN` secret. If you keep it as an environment secret, name it
   `NPM_AUTH_TOKEN`, set `publish_environment` to that environment, and still pass the secret from the caller.
 
-Without either, publishing fails before anything is built. With `publish: false`, pre-releases build without
-publishing.
+Without either, publishing fails before anything is built. With `publish: false`, pre-releases are skipped.
 
 <Callout type="warning">
 Renaming the caller workflow file breaks trusted publishing until the npm configuration is updated, and restarts

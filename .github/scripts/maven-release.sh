@@ -83,8 +83,10 @@ if ! mvn "$RELEASE_PLUGIN:prepare" "${ARGS[@]}"; then
   exit 1
 fi
 
-echo "Running $RELEASE_PLUGIN:perform ${ARGS[*]}"
-if ! mvn "$RELEASE_PLUGIN:perform" "${ARGS[@]}"; then
+# Check the tag out from the local clone, which needs no credentials, rather than
+# cloning it again from the remote, which fails for private repositories.
+echo "Running $RELEASE_PLUGIN:perform ${ARGS[*]} -DlocalCheckout=true"
+if ! mvn "$RELEASE_PLUGIN:perform" "${ARGS[@]}" -DlocalCheckout=true; then
   echo "::error::release:perform failed after the release tag was pushed. Fix the problem and release the next version." >&2
   exit 1
 fi

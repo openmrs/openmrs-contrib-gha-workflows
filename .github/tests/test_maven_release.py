@@ -61,6 +61,8 @@ class MavenReleaseTest(unittest.TestCase):
         prepare, perform, deploy = self.calls()
         self.assertEqual(prepare[0], f"{PLUGIN}:prepare")
         self.assertEqual(perform[0], f"{PLUGIN}:perform")
+        self.assertIn("-DlocalCheckout=true", perform)
+        self.assertNotIn("-DlocalCheckout=true", prepare)
         self.assertEqual(deploy, ["-B", "deploy", "-DskipTests", "-Pci"])
         for call in (prepare, perform):
             self.assertIn("-DreleaseVersion=1.3.3", call)

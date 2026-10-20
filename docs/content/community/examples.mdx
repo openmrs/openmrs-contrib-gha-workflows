@@ -73,7 +73,7 @@ jobs:
 What this relies on:
 
 - **Opting in.** Outside the `openmrs` organization nothing is published unless `publish` is true. Tying it to the
-  owner means forks of this repository, which run the same `ci.yml`, build without publishing.
+  owner means forks of this repository, which run the same `ci.yml`, build without releasing.
 - **Trusted publishing.** Each package has a trusted publisher on npmjs naming this repository, `ci.yml` and the
   `npm-publish` environment, which must exist under the repository's Settings → Environments. No npm token is passed;
   see [Credentials](/workflows/release-frontend-module#credentials). A package that is not on npmjs yet needs one

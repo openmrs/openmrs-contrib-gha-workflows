@@ -162,6 +162,9 @@ class TestMonorepoWithoutCiScripts(_FrontendParamsTestBase):
             "--exclude @openmrs/esm-new-mono", result["pre_release_publish_command"]
         )
         self.assertIn("--tag next", result["pre_release_publish_command"])
+        self.assertIn("--no-private", result["pre_release_publish_command"])
+        self.assertIn("--no-private", result["release_publish_command"])
+        self.assertNotIn("--no-private", result["pre_release_version_command"])
 
         self.assertNotIn("pre_release_patch_publish_command", result)
 

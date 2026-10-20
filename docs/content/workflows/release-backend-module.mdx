@@ -54,8 +54,9 @@ jobs:
 5. Writes `~/.m2/settings.xml` with credentials for the release and snapshot server IDs, and imports the GPG key if
    one is given.
 6. Runs `release:prepare` and `release:perform` with `maven-release-plugin` (see [Plugin version](#plugin-version)),
-   using an empty local repository so nothing cached from earlier builds reaches the release. If `release:prepare`
-   fails, `release:rollback` is attempted.
+   using an empty local repository so nothing cached from earlier builds reaches the release. `release:perform` checks
+   the tag out from the local clone (`localCheckout`), so private repositories need no extra credentials. If
+   `release:prepare` fails, `release:rollback` is attempted.
 7. Deploys the next development SNAPSHOT with `mvn deploy -DskipTests` and the same profiles. If only this step
    fails, the release itself is done and should not be repeated; the GitHub Release is still created.
 8. If `create_github_release` is true, waits for the tag to be visible, generates release notes against the previous
