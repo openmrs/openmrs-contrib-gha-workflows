@@ -3,7 +3,7 @@
 Reusable GitHub Actions workflows for building, testing and releasing OpenMRS frontend (O3) and backend (Maven)
 modules, for repositories in the OpenMRS organization and beyond.
 
-**Documentation: https://openmrs.github.io/openmrs-contrib-gha-workflows/**
+**Documentation: https://github-workflows.openmrs.org/**
 
 The documentation covers getting started inside and outside the OpenMRS organization, and each workflow's inputs,
 secrets and permissions. Its source is in [`docs/`](docs).

@@ -22,8 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Path the site is served under. Set to '' once the site has a custom domain.
-  SITE_PATH: /${{ github.event.repository.name }}
+  SITE_PATH: ''
 
 jobs:
   deploy:

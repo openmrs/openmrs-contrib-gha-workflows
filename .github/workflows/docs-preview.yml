@@ -21,8 +21,7 @@ permissions:
   pull-requests: write
 
 env:
-  # Path the site is served under. Set to '' once the site has a custom domain.
-  SITE_PATH: /${{ github.event.repository.name }}
+  SITE_PATH: ''
 
 jobs:
   preview:
@@ -65,3 +64,4 @@ jobs:
           source-dir: docs/out
           preview-branch: gh-pages
           umbrella-dir: pr-preview
+          pages-base-url: github-workflows.openmrs.org
