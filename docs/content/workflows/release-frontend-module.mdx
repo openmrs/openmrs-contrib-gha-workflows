@@ -60,8 +60,10 @@ with `pre_release_patch_publish_command`. Without a patch publish command, nothi
 Without `support_patch_branches`, pushes to `patch/*` do not run the workflow's jobs at all.
 
 <Callout type="warning">
-The run number restarts when the caller workflow file is renamed. If versions such as `1.2.4-pre.1` already exist on npm,
-the next pre-releases fail until the run number passes them, so keep the caller's file name stable.
+The run number restarts when the caller workflow file is renamed, so keep the caller's file name stable. If versions
+such as `1.2.4-pre.1` already exist on npm, no new pre-release is published until the run number passes them. The
+inferred publish commands pass `--tolerate-republish`, so Yarn skips those versions and the job still succeeds: `next`
+does not move, but the downstream build is still triggered. A custom publish command without that flag fails instead.
 </Callout>
 
 ### Legacy release
@@ -279,8 +281,8 @@ to `github.token`, which fails on a protected branch, and the downstream dispatc
 
 ## OpenMRS defaults
 
-- O3 repositories call the workflow from `ci.yml` on pushes to `main`, and pass `NPM_AUTH_TOKEN` and the
-  `OMRS_ESM_RELEASE` App credentials.
+- O3 repositories call the workflow from `ci.yml` on pushes to `main`, publish with trusted publishing (no
+  `NPM_AUTH_TOKEN`), and pass the `OMRS_ESM_RELEASE` App credentials.
 - With no `downstream_repository`, repositories in the `openmrs` organization trigger `build-frontend.yml` in
   `openmrs/openmrs-distro-referenceapplication` after each pre-release, which rebuilds the Reference Application
   frontend image. The App must be installed there with `actions: write`.

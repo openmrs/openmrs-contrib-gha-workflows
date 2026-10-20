@@ -27,6 +27,8 @@ jobs:
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      APP_ID: ${{ secrets.OMRS_SEC_DASHBOARD_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.OMRS_SEC_DASHBOARD_APP_PRIVATE_KEY }}
 ```
 
 ## What it does
