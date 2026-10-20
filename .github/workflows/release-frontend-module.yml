@@ -52,11 +52,14 @@ on:
         default: false
       publish:
         description: >-
-          Whether to publish to npm. When false, pre-releases build and upload artifacts without
-          publishing, and tagged releases refuse to run. When true, publishing fails unless
-          NPM_AUTH_TOKEN is set or the caller grants `id-token: write` for npm trusted publishing.
+          Whether to publish to npm. Defaults to true in the openmrs org and false elsewhere, so forks
+          that inherit a caller workflow do not publish; outside the openmrs org, set it from an
+          expression such as `github.repository_owner == 'my-org'`. When false, pre-releases build
+          and upload artifacts without publishing, and releases refuse to run. When true, publishing
+          fails unless NPM_AUTH_TOKEN is set or the caller grants `id-token: write` for npm trusted
+          publishing.
         type: boolean
-        default: true
+        default: ${{ github.repository_owner == 'openmrs' }}
       npm_registry_url:
         description: >-
           Registry to publish to, overriding `npmPublishRegistry` in .yarnrc.yml. Scoped registries
@@ -437,7 +440,7 @@ jobs:
       - name: 🔒 Require publishing
         if: ${{ !inputs.publish }}
         run: |
-          echo "::error::Releases publish to npm, so they cannot run with publish: false."
+          echo "::error::Releases publish to npm, so they cannot run with publish: false. Outside the openmrs org, publish defaults to false; set publish: true in the caller to release."
           exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -605,7 +608,7 @@ jobs:
       - name: 🔒 Require publishing
         if: ${{ !inputs.publish }}
         run: |
-          echo "::error::Tagged releases always publish to npm, so they cannot run with publish: false."
+          echo "::error::Tagged releases always publish to npm, so they cannot run with publish: false. Outside the openmrs org, publish defaults to false; set publish: true in the caller to release."
           exit 1
 
       - name: Resolve branch

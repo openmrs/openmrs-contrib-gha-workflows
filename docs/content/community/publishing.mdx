@@ -9,12 +9,9 @@ import { Callout } from 'nextra/components'
 
 ## Names OpenMRS owns
 
-Outside the `openmrs` organization, the workflows will not publish to names OpenMRS owns on public registries. The usual
-cause is a fork that inherited an OpenMRS caller workflow.
-
-- **npm:** the run fails, since publishing there is not a supported setup. Set `publish: false` to build without
-  publishing.
-- **Maven:** SNAPSHOT deploys are skipped with a warning, so a fork's pushes still build; a release fails.
+Outside the `openmrs` organization, nothing is published unless the caller turns publishing on (see
+[Turning publishing on](/community#turning-publishing-on)). Once it is on, publishing to names OpenMRS owns on public
+registries fails, since that is not a supported setup.
 
 | Ecosystem | Not published outside `openmrs` | Allowed |
 | --- | --- | --- |
@@ -40,7 +37,7 @@ The release workflow accepts either:
 - **A token**, passed as the `NPM_AUTH_TOKEN` secret. If you keep it as an environment secret, name it
   `NPM_AUTH_TOKEN`, set `publish_environment` to that environment, and still pass the secret from the caller.
 
-Without either, publishing fails before anything is built. Set `publish: false` to build pre-releases without
+Without either, publishing fails before anything is built. With `publish: false`, pre-releases build without
 publishing.
 
 <Callout type="warning">
@@ -62,7 +59,8 @@ supported but not tested; please [report problems](https://github.com/openmrs/op
 SNAPSHOT deploys and releases go to the repositories in the POM's `<distributionManagement>`, or to
 `maven_snapshot_repository_url` / `maven_release_repository_url` when set. They authenticate with the
 `MAVEN_REPO_USERNAME` and `MAVEN_REPO_API_KEY` secrets, which map to the inferred server IDs. A deploy without
-credentials fails; set `deploy_snapshots: false` to build without deploying.
+credentials fails. SNAPSHOTs deploy only when `deploy_snapshots` is true, and releases only run when `publish` is true;
+outside the `openmrs` organization both default to false.
 
 For signed releases (for example to Maven Central), pass `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`, and use
 `maven_profiles` to activate the profile that signs and publishes.

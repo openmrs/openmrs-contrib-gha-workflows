@@ -58,6 +58,7 @@ jobs:
       id-token: write
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
     with:
+      publish: ${{ github.repository_owner == 'acme' }}
       release_type: ${{ inputs.release_type }}
       release_version: ${{ inputs.release_version }}
       publish_only: ${{ inputs.publish_only || false }}
@@ -71,6 +72,8 @@ jobs:
 
 What this relies on:
 
+- **Opting in.** Outside the `openmrs` organization nothing is published unless `publish` is true. Tying it to the
+  owner means forks of this repository, which run the same `ci.yml`, build without publishing.
 - **Trusted publishing.** Each package has a trusted publisher on npmjs naming this repository, `ci.yml` and the
   `npm-publish` environment, which must exist under the repository's Settings → Environments. No npm token is passed;
   see [Credentials](/workflows/release-frontend-module#credentials). A package that is not on npmjs yet needs one
@@ -105,6 +108,7 @@ jobs:
       contents: write
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
     with:
+      publish: ${{ github.repository_owner == 'acme' }}
       npm_registry_url: https://npm.acme.example/
       release_type: ${{ inputs.release_type }}
       release_version: ${{ inputs.release_version }}
@@ -144,6 +148,7 @@ jobs:
   build:
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
     with:
+      deploy_snapshots: ${{ github.repository_owner == 'acme' }}
       maven_snapshot_repository_url: https://maven.acme.example/repository/snapshots/
     secrets:
       MAVEN_REPO_USERNAME: ${{ secrets.ACME_MAVEN_USER }}
@@ -169,6 +174,7 @@ jobs:
       contents: write
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-backend-module.yml@main
     with:
+      publish: ${{ github.repository_owner == 'acme' }}
       release_version: ${{ inputs.release_version }}
       development_version: ${{ inputs.development_version }}
       maven_release_repository_url: https://maven.acme.example/repository/releases/
@@ -184,11 +190,13 @@ jobs:
 
 What this relies on:
 
+- **Opting in.** `deploy_snapshots` and `publish` default to false outside the `openmrs` organization. Tied to the
+  owner, they stay off in forks of this repository.
 - **Deploy targets.** The repository URL inputs override `<distributionManagement>`, which in a fork of an OpenMRS
   module usually still names OpenMRS repositories. If your POM already points at your own repositories, leave the
   URL inputs out.
-- **Build only.** Without a Maven repository, drop the `secrets` and URL input from `build.yml` and set
-  `deploy_snapshots: false`.
+- **Build only.** Without a Maven repository, drop `deploy_snapshots`, the URL input and the `secrets` from
+  `build.yml`.
 - **SCM.** The POM needs an `<scm>` section, but its URL may still name the upstream repository; the release pushes to
   the repository running it.
 - **Maven Central.** To sign and publish with `central-publishing-maven-plugin`, set `maven_profiles` to the profile

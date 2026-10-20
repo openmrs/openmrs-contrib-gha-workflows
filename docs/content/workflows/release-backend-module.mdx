@@ -141,6 +141,8 @@ POM, and release commits are authored as `openmrs-bot <infrastructure@openmrs.or
 
 ## Outside OpenMRS
 
+- Set `publish`, which defaults to `false` outside the `openmrs` org, so the release fails without it. Set it from the
+  repository owner, e.g. `publish: ${{ github.repository_owner == 'my-org' }}`, so that forks cannot release.
 - Set `git_user_name` and `git_user_email`; the defaults identify the OpenMRS bot.
 - Check `<distributionManagement>`. Projects created from OpenMRS templates or forks often still point at OpenMRS
   repositories, which the pre-release checks reject.

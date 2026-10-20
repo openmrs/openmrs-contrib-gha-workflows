@@ -75,10 +75,10 @@ The workflow expects an `omod` module at `omod/` and fails if no `.omod` is buil
 
 - **Java matrix:** the platform table can produce a wider matrix than you test locally (for example 8, 11, 17 and 21
   for platform 2.8). Pass `java_versions` to narrow it.
-- **SNAPSHOT deploys:** deploys to repositories OpenMRS owns are skipped with a warning outside the `openmrs` org; see
-  [Build Maven project](/workflows/build-maven#outside-openmrs) for the exact rules. A fork that inherits the OpenMRS parent
-  POM's repositories is the usual cause. Set `<distributionManagement>` or `maven_snapshot_repository_url`, or
-  `deploy_snapshots: false`.
+- **SNAPSHOT deploys:** off unless you set `deploy_snapshots`, e.g. `deploy_snapshots: ${{ github.repository_owner == 'my-org' }}`.
+  Deploys to repositories OpenMRS owns fail; see [Build Maven project](/workflows/build-maven#outside-openmrs) for
+  the exact rules. A fork that inherits the OpenMRS parent POM's repositories is the usual cause, so set
+  `<distributionManagement>` or `maven_snapshot_repository_url`.
 - **Secret names:** map differently named secrets in the caller, for example
   `MAVEN_REPO_USERNAME: ${{ secrets.MY_MAVEN_USER }}`. `secrets: inherit` does not rename them.
 

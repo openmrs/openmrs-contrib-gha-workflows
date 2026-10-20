@@ -243,10 +243,18 @@ registries.
 
 ## Publish guard
 
-Outside the `openmrs` GitHub organization, publishing `@openmrs/*` packages or the `openmrs` package to the public npm
-registry is not supported, and the run fails before anything is built. This usually means a fork inherited an OpenMRS
-caller workflow; set `publish: false` to build it without publishing. The same names on any other registry, such as a
-private feed, are allowed.
+Outside the `openmrs` GitHub organization, `publish` defaults to `false`, so a fork that inherits a caller workflow
+builds pre-releases without publishing, and a release run by hand fails. Turn it on from the repository owner, so that
+forks of your repository do not publish either:
+
+```yaml
+    with:
+      publish: ${{ github.repository_owner == 'my-org' }}
+```
+
+Once it is on, publishing `@openmrs/*` packages or the `openmrs` package to the public npm registry is not supported,
+and the run fails before anything is built. The same names on any other registry, such as a private feed, are
+allowed.
 
 ## Downstream build
 
@@ -291,6 +299,7 @@ to `github.token`, which fails on a protected branch, and the downstream dispatc
 ## Outside OpenMRS
 
 - Repositories must use Yarn Berry, with the project at the repository root.
+- Set `publish` to turn publishing on; see [Publish guard](#publish-guard).
 - Set `git_user_name` and `git_user_email` for tagged releases; the defaults are OpenMRS's bot identity.
 - Publish to npmjs with [trusted publishing](#trusted-publishing-recommended). If you use a token, map your own secret
   name in the caller, e.g. `NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`; `secrets: inherit` does not rename secrets.

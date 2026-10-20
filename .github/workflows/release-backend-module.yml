@@ -11,6 +11,13 @@ on:
         description: 'Next development version (e.g., 1.4.0-SNAPSHOT). If omitted, a pre-release such as X.Y.Z-beta.1 continues as X.Y.Z-SNAPSHOT, an X.Y.0 release as X.(Y+1).0-SNAPSHOT, and maven-release-plugin picks any other.'
         type: string
         default: ''
+      publish:
+        description: >-
+          Whether this repository may release. Defaults to true in the openmrs org and false elsewhere,
+          so forks that inherit a caller workflow do not release; outside the openmrs org, set it from
+          an expression such as `github.repository_owner == 'my-org'`. When false, the release fails.
+        type: boolean
+        default: ${{ github.repository_owner == 'openmrs' }}
       java_version:
         description: 'Java version to use for the release. If omitted, inferred from Maven compiler settings in pom.xml.'
         type: string
@@ -98,6 +105,12 @@ jobs:
       PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
 
     steps:
+      - name: 🔒 Require publishing
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "::error::Releases publish to a Maven repository, so they cannot run with publish: false. Outside the openmrs org, publish defaults to false; set publish: true in the caller to release."
+          exit 1
+
       - name: 🔒 Reject partial App credentials
         if: env.PARTIAL_APP_CREDS == 'true'
         run: |

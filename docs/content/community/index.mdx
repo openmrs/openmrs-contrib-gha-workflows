@@ -18,11 +18,28 @@ This page covers the minimum setup. For complete caller workflows, including tag
 
 | Behaviour | Inside `openmrs` | Elsewhere |
 | --- | --- | --- |
-| Publishing `@openmrs/*` or `openmrs` to the public npm registry | Allowed | Fails; set `publish: false` to build only |
-| Deploying to OpenMRS Maven repositories, or `org.openmrs*` groupIds to Maven Central | Allowed | Skipped with a warning; a release fails |
+| Publishing npm packages, deploying SNAPSHOTs and releasing Maven modules | On by default | Off unless the caller turns it on |
+| Publishing `@openmrs/*` or `openmrs` to the public npm registry | Allowed | Fails |
+| Deploying to OpenMRS Maven repositories, or `org.openmrs*` groupIds to Maven Central | Allowed | Fails |
 | Reference Application build after a frontend pre-release | On by default | Only if you set `downstream_repository` |
 
-The restrictions only cover names and repositories OpenMRS owns publicly. Publishing `@openmrs/my-package` to a private
+### Turning publishing on
+
+Outside the `openmrs` organization, the workflows build but do not publish until the caller says so: `publish` on the
+release workflows and `deploy_snapshots` on the Maven build workflows. Set them from the repository owner rather than
+to `true`:
+
+```yaml
+    with:
+      publish: ${{ github.repository_owner == 'my-org' }}
+```
+
+A fork of your repository, or of an OpenMRS one, runs the same caller workflow but under a different owner, so its
+pushes build without trying to publish. Without this, a release run by hand fails and says how to turn it on.
+
+### Names OpenMRS owns
+
+The remaining restrictions only cover names and repositories OpenMRS owns publicly. Publishing `@openmrs/my-package` to a private
 registry, or deploying to your own Maven repository, works as usual. See [Publishing](/community/publishing).
 
 ## Setting up a frontend module
@@ -57,6 +74,8 @@ jobs:
       contents: write
       id-token: write
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+    with:
+      publish: ${{ github.repository_owner == 'my-org' }}
 ```
 
 Pushes to the default branch publish a pre-release to the `next` dist-tag, using
@@ -78,6 +97,7 @@ jobs:
   build:
     uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
     with:
+      deploy_snapshots: ${{ github.repository_owner == 'my-org' }}
       # Optional: deploy SNAPSHOTs somewhere other than <distributionManagement>.
       maven_snapshot_repository_url: https://maven.example.org/snapshots
     secrets:
@@ -85,8 +105,8 @@ jobs:
       MAVEN_REPO_API_KEY: ${{ secrets.MY_MAVEN_PASSWORD }}
 ```
 
-Without Maven credentials, set `deploy_snapshots: false`; otherwise a deploy from the default branch fails. Releases
-use [Release backend module](/workflows/release-backend-module).
+Without a Maven repository to deploy to, leave `deploy_snapshots` out and drop the `secrets`. Releases use
+[Release backend module](/workflows/release-backend-module), which also needs `publish` set.
 
 ## Things to know
 
