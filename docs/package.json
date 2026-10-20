@@ -1,0 +1,24 @@
+{
+  "name": "openmrs-contrib-gha-workflows-docs",
+  "private": true,
+  "scripts": {
+    "generate": "node scripts/generate-workflow-reference.mjs",
+    "predev": "pnpm generate",
+    "dev": "next dev",
+    "prebuild": "pnpm generate",
+    "build": "next build",
+    "postbuild": "pagefind --site out --output-path out/_pagefind && node scripts/post-export.mjs"
+  },
+  "dependencies": {
+    "next": "15.5.18",
+    "nextra": "4.6.1",
+    "nextra-theme-docs": "4.6.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "pagefind": "1.5.2",
+    "yaml": "2.9.0"
+  },
+  "packageManager": "pnpm@11.21.0"
+}

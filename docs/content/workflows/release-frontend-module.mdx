@@ -1,0 +1,331 @@
+---
+title: Release frontend module
+description: Publish pre-releases and releases of an O3 frontend module to npm, with rollback of failed releases.
+---
+
+import { Callout } from 'nextra/components'
+
+# Release frontend module
+
+`release-frontend-module.yml` publishes a Yarn Berry frontend module to npm. It publishes a pre-release to the `next`
+dist-tag on every push to the default branch, and cuts versioned releases either from a GitHub Release created by hand
+(legacy mode) or entirely from a workflow run (tagged-release mode). Builds and tests for pull requests are done by
+[Build frontend module](/workflows/build-frontend-module).
+
+## Usage
+
+```yaml filename=".github/workflows/ci.yml"
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+```
+
+This publishes with [npm trusted publishing](#credentials), the recommended setup for npmjs: no token to store or
+rotate. See [Modes](#modes) for the callers that cut releases, and [Permissions](#permissions) for why `contents: write` is
+needed even for pre-releases.
+
+## Modes
+
+Which mode runs depends on the triggering event and the `release_type` / `release_version` inputs.
+
+| Mode | Runs when | Publishes |
+| --- | --- | --- |
+| Pre-release | `push` or `workflow_dispatch` on the default branch (or `patch/*` with `support_patch_branches`), with no `release_type` / `release_version` | `<next patch>-pre.<run number>` to `next` |
+| Legacy release | `release` event (the caller triggers on `release: created`) | The Release's tag version, to `latest` (or `next` for a prerelease) |
+| Tagged release | `release_type` or `release_version` is set | A new version, to `latest` (or `next` for a pre-release version), then a GitHub Release |
+
+### Pre-release
+
+On each push to the default branch the workflow:
+
+1. Reads the current version and computes `<current version with patch + 1>-pre.<run number>`, e.g. `1.2.4-pre.42`.
+2. Sets that version, builds, and commits the change locally (the commit is never pushed).
+3. Publishes with the pre-release publish command, which targets the `next` dist-tag.
+4. Uploads the build output as `<repository name>-packages`.
+5. Triggers the [downstream build](#downstream-build), if one is configured.
+
+Pre-releases are serialized per branch, so an older run cannot overwrite `next` after a newer one. Add `[skip-pre]` to
+the head commit message to skip the pre-release for a push.
+
+With `support_patch_branches: true`, pushes to `patch/*` branches produce `<version>-patch.<run number>` and publish
+with `pre_release_patch_publish_command`. Without a patch publish command, nothing is published from those branches.
+Without `support_patch_branches`, pushes to `patch/*` do not run the workflow's jobs at all.
+
+<Callout type="warning">
+The run number restarts when the caller workflow file is renamed, so keep the caller's file name stable. If versions
+such as `1.2.4-pre.1` already exist on npm, no new pre-release is published until the run number passes them. The
+inferred publish commands pass `--tolerate-republish`, so Yarn skips those versions and the job still succeeds: `next`
+does not move, but the downstream build is still triggered. A custom publish command without that flag fails instead.
+</Callout>
+
+### Legacy release
+
+Kept for callers that still trigger on `release: created`. When a GitHub Release is created:
+
+1. The tag, minus `tag_prefix`, must be a semver version, otherwise the job fails. Build metadata is allowed but not
+   published, since npm drops it: `v1.2.0+build.5` publishes `1.2.0`.
+2. If the package version does not match the tag, the workflow sets it with the release version command.
+3. It builds and publishes with the release publish command. A Release marked as a prerelease is published with the
+   pre-release publish command instead, so it goes to `next` and never becomes `latest`.
+
+```yaml filename=".github/workflows/ci.yml"
+on:
+  push:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+```
+
+Legacy mode does not push anything and has no rollback: if the publish fails, fix the problem and re-run the job.
+
+### Tagged release
+
+Setting `release_type` (`patch`, `minor` or `major`) or `release_version` (an exact version, e.g. `12.4.0`) cuts a
+release from the default branch:
+
+1. Bumps the version. On a major release, internal `peerDependencies` written as `<major>.x` are moved to the new major.
+2. Commits `(chore) Release <tag_prefix><version>` and tags it `<tag_prefix><version>` locally.
+3. Builds, runs the verify command on the release tree, and uploads the build output.
+4. Pushes the commit and tag together (`git push --atomic`).
+5. Publishes, retrying up to three times.
+6. Creates a GitHub Release with notes generated from merged pull requests, grouped by PR title type. Disable with
+   `create_github_release: false`.
+
+A `release_version` with a pre-release suffix, such as `12.4.0-beta.1`, is published to `next` with the pre-release
+publish command, and its GitHub Release is marked as a prerelease and not made Latest. A typical caller is a manually dispatched workflow:
+
+```yaml filename=".github/workflows/release.yml"
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        type: choice
+        options: [patch, minor, major]
+      release_version:
+        description: Exact version, overrides release_type
+        required: false
+      publish_only:
+        description: Finish a release whose tag is already pushed
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/release-frontend-module.yml@main
+    with:
+      release_type: ${{ inputs.release_type }}
+      release_version: ${{ inputs.release_version }}
+      publish_only: ${{ inputs.publish_only }}
+    secrets:
+      APP_ID: ${{ secrets.RELEASE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+```
+
+Releases can only be cut from the default branch. The push needs a token that can bypass branch protection; see
+[GitHub App or PAT](#github-app-or-pat).
+
+## Failed releases
+
+A tagged release pushes before it publishes, because npm versions cannot be replaced. If the run fails after the push,
+the workflow works out what reached npm and acts on it:
+
+| What reached npm | Result |
+| --- | --- |
+| Nothing | The tag is deleted and a revert of the release commit is pushed, in one atomic push. Fix the problem and run the release again. |
+| Some or all packages | The tag and commit stay. The job summary lists what is live and what is missing. |
+| Unknown (the registry could not be reached) | Nothing is rolled back. |
+
+To decide, it uses two sources:
+
+- **Publish log.** The inferred publish commands record each package as it is published, so those count as live
+  without asking the registry.
+- **Registry probes.** Every other publishable workspace is checked at its own version on the registry Yarn publishes
+  it to, using the registry's per-version endpoint rather than a cached package document.
+
+To finish a release whose tag is already pushed but whose packages are partly or not published, run the workflow again
+with `release_version` set to that version and `publish_only: true`. It checks out the existing tag, builds it and
+publishes without bumping, committing or pushing.
+
+## Inferred commands
+
+The workflow reads `package.json` to choose its commands. Any input you pass overrides the inferred value.
+
+| Command | Inferred value |
+| --- | --- |
+| Set pre-release version | `ci:version` script, else `yarn workspaces foreach ... version` (monorepo) or `yarn version` |
+| Set release version | `ci:version` script, else `yarn workspaces foreach --all --topological version` (monorepo) or `yarn version` |
+| Read current version | `ci:current-version` script, else `version` in the root `package.json` |
+| Pre-release publish | `ci:prepublish` or `ci:publish-next` script, else a recorded `yarn npm publish --tag next` per non-private package |
+| Patch pre-release publish | `ci:prepublish-patch` script, else none |
+| Release publish | `ci:publish` script, else a recorded `yarn npm publish --tolerate-republish` per non-private package |
+| Build, verify, artifacts, Node.js | As in [Build frontend module](/workflows/build-frontend-module#inference) |
+
+### Version scripts
+
+Repositories whose version does not live in the root `package.json`, for example lerna-managed monorepos, can define
+two scripts in the root `package.json`:
+
+- `ci:version <version>` sets the version. It receives either an exact version or, in tagged-release mode, a strategy
+  (`patch`, `minor` or `major`), as `yarn version` does.
+- `ci:current-version` prints the current version and nothing else.
+
+Without `ci:current-version`, the root `package.json` must have a `version`; the job fails with a clear message
+otherwise.
+
+<Callout type="info">
+A repository `ci:publish` script is used as is. Tagged releases retry a failed publish, so a monorepo script should pass
+`--tolerate-republish` to `yarn npm publish`, otherwise the retry stops at the first package that already went out.
+</Callout>
+
+## Credentials
+
+### Trusted publishing (recommended)
+
+For packages on npmjs, use [npm trusted publishing](https://docs.npmjs.com/trusted-publishers). The workflow exchanges a
+short-lived GitHub OIDC token for publish rights, so there is no long-lived npm token to store, leak or rotate. It
+needs:
+
+- `id-token: write` granted on the calling job;
+- Yarn 4.10.3 or later;
+- a trusted publisher configured on npmjs for each package.
+
+Whether npm accepts the OIDC token is only known at publish time, so check the trusted-publisher setup:
+
+- The npm package's trusted publisher must name the **caller's** workflow file (e.g. `ci.yml`), not this one.
+- If the trusted publisher names a GitHub environment, set `publish_environment` to the same name.
+- npm provenance checks `repository.url` in `package.json` against the repository running the workflow.
+
+<Callout type="warning">
+Do not also pass `NPM_AUTH_TOKEN`: when a token is present, Yarn uses it instead of trusted publishing.
+</Callout>
+
+A trusted publisher can only be configured for a package that already exists on npmjs, so publish a brand-new package
+once by hand (or with a token) first.
+
+### npm token
+
+Pass an npm token as `NPM_AUTH_TOKEN` when trusted publishing is not an option: for the first publish of a new
+package, or for a registry other than npmjs that does not support it. Prefer a granular token scoped to the packages
+being published.
+
+The workflow hands the token to Yarn. A custom publish command that uses the npm CLI instead also receives it as
+`NODE_AUTH_TOKEN`, but must configure npm to use it, e.g. with an `.npmrc` containing
+`//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}`.
+
+The job fails early when neither a token nor trusted publishing is available, or when trusted publishing is the only
+option and Yarn is older than 4.10.3.
+
+`publish_environment` also makes environment secrets available to the publishing jobs. The environment secret must
+be named `NPM_AUTH_TOKEN`, the name this workflow reads, and the caller must still pass it (`NPM_AUTH_TOKEN:
+${{ secrets.NPM_AUTH_TOKEN }}` or `secrets: inherit`); GitHub then resolves it to the environment's value. An
+environment secret under any other name is not seen, even if the caller maps it to `NPM_AUTH_TOKEN`.
+
+### Registry
+
+Packages publish wherever Yarn's configuration sends them: `publishConfig.registry`, then the scope's
+`npmPublishRegistry`, then the top-level `npmPublishRegistry`, then `npmRegistryServer`. `npm_registry_url` overrides
+the top-level `npmPublishRegistry`. The workflow is tested against npmjs only; please report problems with other
+registries.
+
+## Publish guard
+
+Outside the `openmrs` GitHub organization, `publish` defaults to `false`, so a fork that inherits a caller workflow
+skips pre-releases, and a release run by hand fails. Turn it on from the repository owner, so that
+forks of your repository do not publish either:
+
+```yaml
+    with:
+      publish: ${{ github.repository_owner == 'my-org' }}
+```
+
+Once it is on, publishing `@openmrs/*` packages or the `openmrs` package to the public npm registry is not supported,
+and the run fails before anything is built. The same names on any other registry, such as a private feed, are
+allowed.
+
+## Downstream build
+
+After a pre-release from the default branch, the workflow can dispatch a workflow in another repository, for example
+to rebuild a distribution that consumes `next`:
+
+```yaml
+    with:
+      downstream_repository: my-org/my-distro
+      downstream_workflow: build-frontend.yml
+    secrets:
+      APP_ID: ${{ secrets.DISTRO_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.DISTRO_APP_PRIVATE_KEY }}
+```
+
+The dispatch runs `gh workflow run` with no inputs, so the target workflow needs a `workflow_dispatch` trigger. The
+token needs `actions: write` on the downstream repository. Set `trigger_downstream_build: false` to turn it off;
+`trigger_refapp_build` is a deprecated alias and either set to `false` disables the dispatch.
+
+## GitHub App or PAT
+
+Two operations need more than the job's `github.token`:
+
+- **Tagged-release push.** Pushes the release commit and tag to the default branch. The token must be allowed past
+  branch protection or rulesets.
+- **Downstream dispatch.** Needs `actions: write` on another repository.
+
+Pass `APP_ID` and `APP_PRIVATE_KEY` for a GitHub App (preferred), or `BOT_PAT`. An App does not bypass branch
+protection implicitly: add it to the ruleset bypass list. A PAT works only if its owner may bypass the rules. Supply
+both App secrets or neither; one without the other fails the run. Without either, the tagged-release push falls back
+to `github.token`, which fails on a protected branch, and the downstream dispatch fails.
+
+## OpenMRS defaults
+
+- O3 repositories call the workflow from `ci.yml` on pushes to `main`, publish with trusted publishing (no
+  `NPM_AUTH_TOKEN`), and pass the `OMRS_ESM_RELEASE` App credentials.
+- With no `downstream_repository`, repositories in the `openmrs` organization trigger `build-frontend.yml` in
+  `openmrs/openmrs-distro-referenceapplication` after each pre-release, which rebuilds the Reference Application
+  frontend image. The App must be installed there with `actions: write`.
+- Tags are `v<version>`, and release commits are authored by `openmrs-bot` / `infrastructure@openmrs.org`.
+
+## Outside OpenMRS
+
+- Repositories must use Yarn Berry, with the project at the repository root.
+- Set `publish` to turn publishing on; see [Publish guard](#publish-guard).
+- Set `git_user_name` and `git_user_email` for tagged releases; the defaults are OpenMRS's bot identity.
+- Publish to npmjs with [trusted publishing](#trusted-publishing-recommended). If you use a token, map your own secret
+  name in the caller, e.g. `NPM_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}`; `secrets: inherit` does not rename secrets.
+- If `latest` on npm points at a pre-release, it was most likely set by the first publish of the package, which npm
+  always tags `latest`. Fix it once with `npm dist-tag add <package>@<version> latest`.
+
+## Permissions
+
+A called workflow's jobs cannot have more permissions than the caller grants, and GitHub checks this when the run
+starts, for every job, including jobs that end up skipped. Grant these on the calling job:
+
+| Permission | Why |
+| --- | --- |
+| `contents: write` | The GitHub Release job requests it, so every caller needs it, even for pre-releases only. |
+| `id-token: write` | Needed for npm trusted publishing, the recommended setup. Not needed with `NPM_AUTH_TOKEN`. |
+
+The tagged-release job inherits the caller's permissions, so it can use `id-token: write` when granted.
+
+## Inputs
+
+<WorkflowReference id="workflows/release-frontend-module" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/release-frontend-module" section="secrets" />

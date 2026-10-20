@@ -1,0 +1,65 @@
+---
+title: Repository requirements
+description: The project layouts and conventions the workflows expect.
+---
+
+import { Callout } from 'nextra/components'
+
+# Repository requirements
+
+## Frontend modules
+
+| Requirement | Details |
+| --- | --- |
+| Package manager | Yarn Berry (2 or later), with the Yarn release committed and referenced by `yarnPath`. 4.10.3 or later for trusted publishing |
+| Layout | One Yarn project at the repository root; a single package or a workspaces monorepo |
+| Lockfile | `yarn.lock` up to date: installs run with `--immutable` |
+| Version | Root `package.json` `version`, or a `ci:current-version` script |
+| Build output | `dist/` per package, unless you set `artifact_path` |
+| Node.js | `engines.node` in `package.json`; otherwise Node.js 22 |
+
+Yarn 1, npm and pnpm projects, and projects in a subdirectory, are not supported.
+
+### Script contract
+
+The workflows run these root `package.json` scripts when they exist and infer a default otherwise. Any of them can
+also be replaced with a workflow input.
+
+| Script | Used for | Default when absent |
+| --- | --- | --- |
+| `build` | Build (when there is no `turbo.json`) | `yarn turbo run build` with `turbo.json` |
+| `verify` | Lint, type checks and tests | Required |
+| `ci:version <version>` | Set the version; receives an exact version or `patch` / `minor` / `major` | `yarn version`, across all workspaces in a monorepo |
+| `ci:current-version` | Print the current version | Root `package.json` `version` |
+| `ci:prepublish` | Publish a pre-release to `next` | `yarn npm publish --tag next` per package |
+| `ci:publish` | Publish a release | `yarn npm publish` per package |
+
+The scripts make other monorepo tools (lerna, nx and so on) work without the workflows knowing about them. For example,
+a lerna repository might define:
+
+```json filename="package.json"
+{
+  "scripts": {
+    "ci:version": "lerna version --no-git-tag-version --no-push --yes",
+    "ci:current-version": "node -p \"require('./lerna.json').version\"",
+    "ci:prepublish": "lerna publish from-package --dist-tag next --yes",
+    "ci:publish": "lerna publish from-package --yes"
+  }
+}
+```
+
+<Callout type="info">
+The default publish commands record each package as it is published, which lets a failed release tell exactly what
+went out. With your own `ci:publish`, the workflow asks the registry instead. Pass `--tolerate-republish` (or your
+tool's equivalent) so a retried publish skips packages that already went out.
+</Callout>
+
+## Backend modules
+
+| Requirement | Details |
+| --- | --- |
+| Build | Maven, with a `pom.xml` at the repository root |
+| Java version | Inferred from the OpenMRS platform dependency (2.0 and later) and the compiler settings; set `java_versions` for older platforms or to narrow the matrix |
+| Deploy targets | `<distributionManagement>` in the POM, or the repository URL inputs |
+| Releases | An `<scm><developerConnection>` or `<connection>`; the release pushes to the repository running it, whatever URL it names |
+| SNAPSHOT branches | `main`, `master`, the default branch, and `N.x` / `N.N.x` maintenance branches whose version matches; set `deploy_branch` for others |

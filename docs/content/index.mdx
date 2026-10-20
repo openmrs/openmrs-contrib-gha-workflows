@@ -1,0 +1,43 @@
+---
+title: Overview
+description: Reusable GitHub Actions workflows for building and releasing OpenMRS modules.
+---
+
+import { Callout, Cards } from 'nextra/components'
+
+# OpenMRS GitHub Actions Workflows
+
+[openmrs-contrib-gha-workflows](https://github.com/openmrs/openmrs-contrib-gha-workflows) holds the reusable GitHub
+Actions workflows OpenMRS uses to build, test and release its frontend (O3) and backend (Maven) modules. Repositories
+call them instead of maintaining their own copies, so fixes and improvements reach every module at once.
+
+The workflows are a community resource too: implementers outside the OpenMRS GitHub organization can use them to
+build and publish their own modules to their own npm scopes and Maven repositories.
+
+<Cards>
+  <Cards.Card title="OpenMRS repositories" href="/openmrs" arrow />
+  <Cards.Card title="Other organizations" href="/community" arrow />
+  <Cards.Card title="Workflow reference" href="/workflows/build-frontend-module" arrow />
+</Cards>
+
+## Workflows
+
+| Workflow | Purpose |
+| --- | --- |
+| [Build frontend module](/workflows/build-frontend-module) | Build, lint, type-check and test an O3 module |
+| [Release frontend module](/workflows/release-frontend-module) | Publish pre-releases and releases to npm |
+| [Frontend PR title check](/workflows/frontend-pr-title-check) | Enforce the O3 pull request title format |
+| [Frontend PR description check](/workflows/frontend-pr-description-check) | Enforce the O3 pull request template |
+| [Build Maven project](/workflows/build-maven) | Build and test any Maven project, deploying SNAPSHOTs |
+| [Build backend module](/workflows/build-backend-module) | Build an OpenMRS backend module across Java versions |
+| [Release backend module](/workflows/release-backend-module) | Release a Maven module with maven-release-plugin |
+| [Upload coverage](/workflows/upload-coverage) | Send JaCoCo coverage to Codecov, including from forks |
+| [OWASP Dependency-Check](/workflows/owasp-dependency-check) | Scan dependencies for known vulnerabilities (OpenMRS only) |
+| [Pull translations](/workflows/tx-pull) / [Push translations](/workflows/tx-push) | Sync translations with Transifex (OpenMRS only) |
+| [Claude PR review](/workflows/claude-pr-review) | Automated pull request review |
+
+## Versions
+
+<Callout type="info">
+  As with any [reusable GitHub Actions workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow), when calling you must specify a `{ref}` for OpenMRS repos, we always use `@main` to get the most up-to-date version. For stability, however, it may be better to either use a version tag, e.g., `@v1` or, like this repo does for the reusable components it uses, pin to a specific commit hash. You can easily setup Dependabot to keep either of these latter two up-to-date, which may be preferable as `@main` may occassionally break.
+</Callout>

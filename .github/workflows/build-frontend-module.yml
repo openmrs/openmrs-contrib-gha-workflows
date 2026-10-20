@@ -28,6 +28,12 @@ on:
         description: 'Path(s) to build artifacts to upload (glob supported). If omitted, inferred from package.json.'
         type: string
         default: ''
+      turbo_concurrency:
+        description: >-
+          Turborepo --concurrency for the inferred build and verify commands. Not added where the
+          repo's own script already sets it. Empty for none.
+        type: string
+        default: '5'
 
 jobs:
   build:
@@ -42,8 +48,8 @@ jobs:
       - name: Checkout inference action
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -59,6 +65,7 @@ jobs:
           verify_command: ${{ inputs.verify_command }}
           enable_turborepo_cache: ${{ inputs.enable_turborepo_cache }}
           artifact_path: ${{ inputs.artifact_path }}
+          turbo_concurrency: ${{ inputs.turbo_concurrency }}
 
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

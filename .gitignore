@@ -1,2 +1,3 @@
 .idea
 *.pyc
+.github/tools/node_modules

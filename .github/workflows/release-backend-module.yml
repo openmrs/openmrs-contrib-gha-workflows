@@ -4,13 +4,20 @@ on:
   workflow_call:
     inputs:
       release_version:
-        description: 'Release version (e.g., 1.3.3)'
+        description: 'Release version (e.g., 1.3.3 or 1.4.0-beta.1). If omitted, the POM version without -SNAPSHOT.'
         type: string
-        required: true
+        default: ''
       development_version:
-        description: 'Next development version (e.g., 1.4.0-SNAPSHOT)'
+        description: 'Next development version (e.g., 1.4.0-SNAPSHOT). If omitted, a pre-release such as X.Y.Z-beta.1 continues as X.Y.Z-SNAPSHOT, an X.Y.0 release as X.(Y+1).0-SNAPSHOT, and maven-release-plugin picks any other.'
         type: string
-        required: true
+        default: ''
+      publish:
+        description: >-
+          Whether this repository may release. Defaults to true in the openmrs org and false elsewhere,
+          so forks that inherit a caller workflow do not release; outside the openmrs org, set it from
+          an expression such as `github.repository_owner == 'my-org'`. When false, the release fails.
+        type: boolean
+        default: ${{ github.repository_owner == 'openmrs' }}
       java_version:
         description: 'Java version to use for the release. If omitted, inferred from Maven compiler settings in pom.xml.'
         type: string
@@ -38,6 +45,18 @@ on:
         description: 'Maven server ID for snapshot deployment. If omitted, inferred from <distributionManagement><snapshotRepository><id> in pom.xml.'
         type: string
         required: false
+      maven_release_repository_url:
+        description: 'Repository URL to deploy the release to instead of <distributionManagement><repository>.'
+        type: string
+        default: ''
+      maven_snapshot_repository_url:
+        description: 'Repository URL to deploy the next SNAPSHOT to instead of <distributionManagement><snapshotRepository>.'
+        type: string
+        default: ''
+      maven_profiles:
+        description: 'Comma-separated Maven profiles to activate in the release builds (e.g. release,sign).'
+        type: string
+        default: ''
       create_github_release:
         description: 'Whether to create a GitHub Release with release notes after Maven release'
         type: boolean
@@ -78,63 +97,54 @@ jobs:
     outputs:
       tag_name: ${{ steps.tag.outputs.name }}
       base_ref: ${{ steps.prev.outputs.base_ref }}
+      release_version: ${{ steps.version.outputs.release }}
+      prerelease: ${{ steps.prev.outputs.prerelease }}
+      released: ${{ steps.release.outputs.released }}
     env:
       HAS_APP_CREDS: ${{ secrets.APP_ID != '' && secrets.APP_PRIVATE_KEY != '' }}
       PARTIAL_APP_CREDS: ${{ (secrets.APP_ID != '') != (secrets.APP_PRIVATE_KEY != '') }}
 
     steps:
+      - name: 🔒 Require publishing
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "::error::Releases publish to a Maven repository, so they cannot run with publish: false. Outside the openmrs org, publish defaults to false; set publish: true in the caller to release."
+          exit 1
+
       - name: 🔒 Reject partial App credentials
         if: env.PARTIAL_APP_CREDS == 'true'
         run: |
           echo "::error::APP_ID and APP_PRIVATE_KEY must be set together — got one without the other. Check for a typo in the caller's secret names."
           exit 1
 
-      - name: Validate version inputs
-        run: |
-          SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*)){0,1}(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*)){0,1}$'
-          if [[ ! "$RELEASE_VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "::error::Release version '$RELEASE_VERSION' is not valid semver (e.g., 1.3.3)"
-            exit 1
-          fi
-          if [[ "$RELEASE_VERSION" =~ -[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]$ ]]; then
-            echo "::error::Release version '$RELEASE_VERSION' cannot be a SNAPSHOT"
-            exit 1
-          fi
-          if [[ -n "$DEVELOPMENT_VERSION" && ! "$DEVELOPMENT_VERSION" =~ $SEMVER_REGEX ]]; then
-            echo "::error::Development version '$DEVELOPMENT_VERSION' is not valid semver (e.g., 1.4.0-SNAPSHOT)"
-            exit 1
-          fi
-
-          {
-            echo "### Release Parameters 🚀"
-            echo "- **Release Version:** \`$RELEASE_VERSION\`"
-            echo "- **Next Development Version:** \`$DEVELOPMENT_VERSION\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Versions validated: release=$RELEASE_VERSION, development=$DEVELOPMENT_VERSION"
+      - name: 🔒 Verify Maven credentials
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
-          DEVELOPMENT_VERSION: ${{ inputs.development_version }}
+          MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
+          MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+        run: |
+          if [ -z "$MAVEN_REPO_USERNAME" ] || [ -z "$MAVEN_REPO_API_KEY" ]; then
+            echo "::error::Releasing needs both MAVEN_REPO_USERNAME and MAVEN_REPO_API_KEY. Check the caller passes secrets that exist."
+            exit 1
+          fi
 
       - name: Resolve branch
         id: branch
         env:
           INPUT_BRANCH: ${{ inputs.branch }}
           REF_NAME: ${{ github.ref_name }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          # A version branch (e.g. 2.x) is checked against the release version once
+          # that is resolved from the POM.
           if [ -n "$INPUT_BRANCH" ]; then
             echo "name=$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
           elif [ "$REF_NAME" = "main" ] || [ "$REF_NAME" = "master" ]; then
             echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           elif echo "$REF_NAME" | grep -qE '^[0-9]+\.x$|^[0-9]+\.[0-9]+\.x$'; then
-            PREFIX="${REF_NAME%.x}."
-            if [[ "$RELEASE_VERSION" == "$PREFIX"* ]]; then
-              echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
-            else
-              echo "::error::Branch '$REF_NAME' does not match release version '$RELEASE_VERSION' (expected prefix '$PREFIX'). Provide the branch explicitly."
-              exit 1
-            fi
+            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "version_prefix=${REF_NAME%.x}." >> "$GITHUB_OUTPUT"
+          elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           else
             echo "::error::Cannot auto-detect release branch from '$REF_NAME'. Provide the branch explicitly."
             exit 1
@@ -147,8 +157,8 @@ jobs:
             echo "::error::Branch name '$BRANCH' contains invalid characters. Only alphanumeric, '.', '_', '/' and '-' are allowed."
             exit 1
           fi
-          # Verify the branch exists in the remote repository (requires public repo)
-          if ! git ls-remote --exit-code --heads "https://github.com/$REPO.git" "$BRANCH" > /dev/null 2>&1; then
+          # Verify the branch exists in the remote repository
+          if ! gh api "repos/$REPO/git/ref/heads/$BRANCH" --silent > /dev/null 2>&1; then
             echo "::error::Branch '$BRANCH' does not exist in $REPO"
             exit 1
           fi
@@ -157,6 +167,7 @@ jobs:
 
           echo "Branch validated: $BRANCH exists in $REPO"
         env:
+          GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ steps.branch.outputs.name }}
           REPO: ${{ github.repository }}
 
@@ -175,19 +186,11 @@ jobs:
           ref: ${{ steps.branch.outputs.name }}
           token: ${{ steps.app-token.outputs.token || secrets.BOT_PAT || github.token }}
 
-      - name: Checkout release scripts
+      - name: Checkout shared actions and scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: openmrs/openmrs-contrib-bamboo
-          path: release-scripts
-          sparse-checkout: release-prepare-perform.sh
-          sparse-checkout-cone-mode: false
-
-      - name: Checkout inference action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: openmrs/openmrs-contrib-gha-workflows
-          ref: ${{ github.job_workflow_sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           sparse-checkout: |
             .github/actions
             .github/scripts
@@ -201,6 +204,75 @@ jobs:
           main_java_version: ${{ inputs.java_version }}
           snapshot_server_id: ${{ inputs.maven_snapshot_server_id }}
           release_server_id: ${{ inputs.maven_release_server_id }}
+          maven_profiles: ${{ inputs.maven_profiles }}
+
+      - name: Resolve versions
+        id: version
+        env:
+          INPUT_RELEASE_VERSION: ${{ inputs.release_version }}
+          DEVELOPMENT_VERSION: ${{ inputs.development_version }}
+          POM_VERSION: ${{ steps.infer.outputs.project_version }}
+          VERSION_PREFIX: ${{ steps.branch.outputs.version_prefix }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          RELEASE_VERSION="$INPUT_RELEASE_VERSION"
+          if [ -z "$RELEASE_VERSION" ]; then
+            if [[ ! "$POM_VERSION" =~ -SNAPSHOT$ ]]; then
+              echo "::error::The POM version '$POM_VERSION' is not a SNAPSHOT, so the release version cannot be inferred. Provide release_version."
+              exit 1
+            fi
+            RELEASE_VERSION="${POM_VERSION%-SNAPSHOT}"
+          fi
+
+          SEMVER_REGEX='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*)){0,1}(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*)){0,1}$'
+          if [[ ! "$RELEASE_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Release version '$RELEASE_VERSION' is not valid semver (e.g., 1.3.3)"
+            exit 1
+          fi
+          if [[ "$RELEASE_VERSION" =~ -[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]$ ]]; then
+            echo "::error::Release version '$RELEASE_VERSION' cannot be a SNAPSHOT"
+            exit 1
+          fi
+          if [[ -n "$DEVELOPMENT_VERSION" && ! "$DEVELOPMENT_VERSION" =~ $SEMVER_REGEX ]]; then
+            echo "::error::Development version '$DEVELOPMENT_VERSION' is not valid semver (e.g., 1.4.0-SNAPSHOT)"
+            exit 1
+          fi
+          if [[ -n "$VERSION_PREFIX" && "$RELEASE_VERSION" != "$VERSION_PREFIX"* ]]; then
+            echo "::error::Branch '$BRANCH' does not match release version '$RELEASE_VERSION' (expected prefix '$VERSION_PREFIX'). Provide the branch explicitly."
+            exit 1
+          fi
+
+          echo "release=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release Parameters 🚀"
+            echo "- **Release Version:** \`$RELEASE_VERSION\`"
+            echo "- **Next Development Version:** \`${DEVELOPMENT_VERSION:-inferred}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🔒 Check release target
+        id: target
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TARGET_URL: >-
+            ${{ inputs.maven_release_repository_url || steps.infer.outputs.release_repository_url }}
+            ${{ inputs.maven_snapshot_repository_url || steps.infer.outputs.snapshot_repository_url }}
+          GROUP_IDS: ${{ steps.infer.outputs.group_ids }}
+          CENTRAL_PUBLISHING: ${{ steps.infer.outputs.central_publishing }}
+        run: python3 .gha-workflows/.github/scripts/maven_publish_checks.py target
+
+      - name: 🔒 Reject OpenMRS-owned release target
+        if: steps.target.outputs.allowed != 'true'
+        env:
+          REASON: ${{ steps.target.outputs.reason }}
+        run: |
+          echo "::error::Only repositories in the openmrs org can release here: $REASON. Set maven_release_repository_url and maven_snapshot_repository_url, or <distributionManagement> in the POM, to your own repositories."
+          exit 1
+
+      - name: 🔒 Check POM scm
+        id: scm
+        env:
+          SCM_CONNECTIONS: ${{ steps.infer.outputs.scm_connections }}
+        run: python3 .gha-workflows/.github/scripts/maven_publish_checks.py scm
 
       - name: Resolve Java version
         id: java
@@ -228,7 +300,7 @@ jobs:
         env:
           TAG_FORMAT: ${{ steps.infer.outputs.release_tag_format }}
           ARTIFACT_ID: ${{ steps.infer.outputs.project_artifact_id }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release }}
         run: |
           # Resolve the maven-release-plugin tag name by substituting the
           # placeholders the plugin supports for the values it would use at
@@ -257,10 +329,11 @@ jobs:
         id: prev
         env:
           TAG_PREFIX: ${{ steps.tag.outputs.prefix }}
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release }}
         run: |
           # Pick the comparison base for release notes: this artifact's latest
-          # stable release older than the one being cut. Passing it explicitly
+          # stable release older than the one being cut (or than its core
+          # version, for a pre-release such as 1.4.0-beta.1). Passing it explicitly
           # keeps create-release-notes from defaulting to the repo-wide latest
           # release, which may belong to another active line (e.g. a 3.x tag
           # while cutting 2.5.4 from the 2.x branch). Empty output is fine — the
@@ -288,24 +361,23 @@ jobs:
             fi
           done
           mkdir -p "$HOME/.m2"
-          cat > "$HOME/.m2/settings.xml" << EOF
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
-            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-            xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
-            <servers>
-              <server>
-                <id>$RELEASE_ID</id>
-                <username>\${env.MAVEN_REPO_USERNAME}</username>
-                <password>\${env.MAVEN_REPO_API_KEY}</password>
-              </server>
-              <server>
-                <id>$SNAPSHOT_ID</id>
-                <username>\${env.MAVEN_REPO_USERNAME}</username>
-                <password>\${env.MAVEN_REPO_API_KEY}</password>
-              </server>
-            </servers>
-          </settings>
-          EOF
+          # Maven, not the shell, expands ${env.*}; a shared release/snapshot id is written once.
+          # shellcheck disable=SC2016
+          {
+            echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"'
+            echo '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'
+            echo '  xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">'
+            echo '  <servers>'
+            for id in $(printf '%s\n' "$RELEASE_ID" "$SNAPSHOT_ID" | sort -u); do
+              echo "    <server>"
+              echo "      <id>$id</id>"
+              echo '      <username>${env.MAVEN_REPO_USERNAME}</username>'
+              echo '      <password>${env.MAVEN_REPO_API_KEY}</password>'
+              echo "    </server>"
+            done
+            echo '  </servers>'
+            echo '</settings>'
+          } > "$HOME/.m2/settings.xml"
 
       - name: Verify tag does not exist
         run: |
@@ -316,6 +388,19 @@ jobs:
           mvn release:clean -B 2>/dev/null || true
         env:
           RELEASE_TAG: ${{ steps.tag.outputs.name }}
+
+      - name: Resolve maven-release-plugin version
+        id: release-plugin
+        env:
+          DECLARED_VERSION: ${{ steps.infer.outputs.release_plugin_version }}
+        run: |
+          # An empty project's effective POM shows the version Maven's super POM pins,
+          # so a version the project chose can be told apart from Maven's default.
+          EMPTY="$RUNNER_TEMP/empty-project"
+          mkdir -p "$EMPTY"
+          echo '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion><groupId>empty</groupId><artifactId>empty</artifactId><version>1</version><packaging>pom</packaging></project>' > "$EMPTY/pom.xml"
+          mvn -B -q -f "$EMPTY/pom.xml" help:effective-pom -Doutput="$EMPTY/effective-pom.xml"
+          SUPER_EFFECTIVE_POM="$EMPTY/effective-pom.xml" python3 .gha-workflows/.github/scripts/resolve_release_plugin.py
 
       - name: Import GPG key
         env:
@@ -328,33 +413,51 @@ jobs:
           fi
 
       - name: Release prepare and perform
+        id: release
         run: |
-          MAVEN_HOME="$(mvn -v 2>/dev/null | grep 'Maven home:' | sed 's/Maven home: //')"
-          export MAVEN_HOME
           git config --global url."https://github.com/".insteadOf "git@github.com:"
           git config --global --add url."https://github.com/".insteadOf "ssh://git@github.com/"
+          # Send maven-release-plugin's pushes and checkouts to this repository, whatever the POM's <scm> says.
+          for url in $SCM_URLS; do
+            git config --global --add url."https://github.com/$REPO.git".insteadOf "$url"
+          done
           git config --global user.email "$GIT_USER_EMAIL"
           git config --global user.name "$GIT_USER_NAME"
           export MAVEN_OPTS="-Denv.MAVEN_REPO_USERNAME=$MAVEN_REPO_USERNAME -Denv.MAVEN_REPO_API_KEY=$MAVEN_REPO_API_KEY"
-          ./release-scripts/release-prepare-perform.sh \
-            -r "$RELEASE_VERSION" \
-            -d "$DEVELOPMENT_VERSION" \
-            -e "https://github.com/$REPO.git" \
-            -s
+          # Tests are skipped: they run in the build workflow before a release is cut.
+          ARGS=(-r "$RELEASE_VERSION" -v "$RELEASE_PLUGIN_VERSION" -s)
+          if [ -n "$DEVELOPMENT_VERSION" ]; then ARGS+=(-d "$DEVELOPMENT_VERSION"); fi
+          IFS=',' read -ra PROFILE_LIST <<< "$MAVEN_PROFILES"
+          for profile in "${PROFILE_LIST[@]}"; do
+            profile="$(echo "$profile" | xargs)"
+            if [ -n "$profile" ]; then ARGS+=(-p "$profile"); fi
+          done
+          # id::default::url is the alternate-repository syntax both deploy plugin 2.8.x and 3.x accept.
+          if [ -n "$RELEASE_URL" ]; then ARGS+=(-D "altReleaseDeploymentRepository=$RELEASE_ID::default::$RELEASE_URL"); fi
+          if [ -n "$SNAPSHOT_URL" ]; then ARGS+=(-D "altSnapshotDeploymentRepository=$SNAPSHOT_ID::default::$SNAPSHOT_URL"); fi
+          bash .gha-workflows/.github/scripts/maven-release.sh "${ARGS[@]}"
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ steps.version.outputs.release }}
           DEVELOPMENT_VERSION: ${{ inputs.development_version }}
+          RELEASE_PLUGIN_VERSION: ${{ steps.release-plugin.outputs.version }}
+          MAVEN_PROFILES: ${{ inputs.maven_profiles }}
+          RELEASE_ID: ${{ steps.release-server.outputs.id }}
+          SNAPSHOT_ID: ${{ steps.snapshot-server.outputs.id }}
+          RELEASE_URL: ${{ inputs.maven_release_repository_url }}
+          SNAPSHOT_URL: ${{ inputs.maven_snapshot_repository_url }}
+          SCM_URLS: ${{ steps.scm.outputs.urls }}
+          REPO: ${{ github.repository }}
           GIT_USER_NAME: ${{ inputs.git_user_name }}
           GIT_USER_EMAIL: ${{ inputs.git_user_email }}
           MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
           MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          REPO: ${{ github.repository }}
 
   github-release:
     name: Create GitHub Release
     needs: release
-    if: ${{ inputs.create_github_release }}
+    # A release whose follow-up SNAPSHOT deploy failed still gets its GitHub Release.
+    if: ${{ !cancelled() && inputs.create_github_release && needs.release.outputs.released == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -364,7 +467,7 @@ jobs:
           MAX_RETRIES=5
           DELAY=15
           for i in $(seq 1 "$MAX_RETRIES"); do
-            if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/$RELEASE_TAG" > /dev/null 2>&1; then
+            if gh api "repos/$REPO/git/ref/tags/$RELEASE_TAG" --silent > /dev/null 2>&1; then
               echo "Tag $RELEASE_TAG is reachable (attempt $i/$MAX_RETRIES)"
               exit 0
             fi
@@ -374,6 +477,7 @@ jobs:
           echo "::error::Tag $RELEASE_TAG was not reachable after $MAX_RETRIES attempts"
           exit 1
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.release.outputs.tag_name }}
           REPO: ${{ github.repository }}
 
@@ -396,9 +500,9 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
-          name: ${{ inputs.release_version }}
+          name: ${{ needs.release.outputs.release_version }}
           body: |
             ## What's Changed
             ${{ steps.create-release-notes.outputs.release-notes }}
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.release.outputs.prerelease == 'true' }}

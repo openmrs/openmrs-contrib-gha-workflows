@@ -1,0 +1,11 @@
+packages:
+  - .
+
+# sharp is only needed for image optimisation, which a static export does not do.
+allowBuilds:
+  sharp: false
+
+# Same fix as openmrs-contrib-o3-docs: Layout validates its props without
+# `children`, which current zod rejects.
+patchedDependencies:
+  nextra-theme-docs@4.6.1: patches/nextra-theme-docs@4.6.1.patch

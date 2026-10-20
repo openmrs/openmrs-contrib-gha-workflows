@@ -1,0 +1,67 @@
+name: Documentation preview
+
+# Builds the docs site for every pull request that can affect it, and publishes
+# a preview under pr-preview/pr-<number>/ on the gh-pages branch, linked from a
+# PR comment. The preview is removed when the pull request closes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+concurrency:
+  group: docs-preview-${{ github.event.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  SITE_PATH: ''
+
+jobs:
+  preview:
+    name: Build and preview
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Fork pull requests are built as a check but never previewed: GitHub gives
+      # them a read-only token, and publishing PR-authored pages on the project's
+      # Pages origin would be a trust risk regardless.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: github.event.action != 'closed'
+        with:
+          package_json_file: docs/package.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: github.event.action != 'closed'
+        with:
+          node-version-file: docs/.nvmrc
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        if: github.event.action != 'closed'
+
+      - run: pnpm build
+        if: github.event.action != 'closed'
+        env:
+          BASE_PATH: ${{ env.SITE_PATH }}/pr-preview/pr-${{ github.event.number }}
+
+      - uses: rossjrw/pr-preview-action@ffa7509e91a3ec8dfc2e5536c4d5c1acdf7a6de9 # v1.8.1
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          source-dir: docs/out
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          pages-base-url: github-workflows.openmrs.org

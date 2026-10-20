@@ -1,0 +1,95 @@
+---
+title: Build backend module
+description: Build and test an OpenMRS backend module across the Java versions its platform supports, upload the OMOD, and deploy SNAPSHOTs.
+---
+
+import { Callout } from 'nextra/components'
+
+# Build backend module
+
+`build-backend-module.yml` builds an OpenMRS backend module (an `api` + `omod` project) on every Java version its
+OpenMRS platform supports, uploads the `.omod` with checksums, stages JaCoCo coverage for
+[Upload coverage](/workflows/upload-coverage), and deploys SNAPSHOT artifacts after a push to a release branch. It behaves like
+[Build Maven project](/workflows/build-maven), plus the OMOD handling and a Java matrix inferred from the platform version.
+
+## Usage
+
+```yaml filename=".github/workflows/build.yml"
+name: Build with Maven
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-backend-module.yml@main
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
+      MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+```
+
+## What it does
+
+1. **Prepare:** runs `mvn help:effective-pom` and infers the Java versions, the SNAPSHOT server ID and repository URL,
+   and the project version. Decides whether a SNAPSHOT deploy is allowed.
+2. **Build:** runs `mvn --batch-mode <maven_args> -Dmaven.deploy.skip` once per Java version, in parallel. On the main
+   Java version it also:
+   - stages any `jacoco.xml` reports as a `coverage-reports` artifact, unless `upload_coverage` is `"false"`;
+   - uploads `omod/target/<finalName>.omod` with `.sha1` and `.sha256` checksums as an artifact named after the OMOD.
+3. **Deploy:** after every build passes, runs `mvn deploy -DskipTests` on the main Java version, if the
+   [SNAPSHOT deploy rules](/workflows/build-maven#snapshot-deploys) allow it. The rules are the same as for Build Maven project.
+
+## Java versions
+
+`java_versions` comes from the module's OpenMRS platform version, found in this order: an `openmrs-api` or
+`openmrs-web` dependency, the same in `<dependencyManagement>`, then the `openmrsPlatformVersion` property set by the
+OpenMRS module parent POM. Version ranges such as `[2.4.0,)` take every Java version their tiers cover.
+
+| Platform version | Java versions |
+| --- | --- |
+| 2.0.x to 2.3.x | 8 |
+| 2.4.x to 2.6.x | 8, 11 |
+| 2.7.x to 2.x | 8, 11, 17, 21 |
+| 3.0.0 and later | 21, 25 |
+
+Versions below the module's compiler target are dropped. The main Java version, which stages coverage, uploads the
+OMOD and deploys, is the lowest remaining version.
+
+<Callout type="warning">
+Platform 1.x is not in the table, so a module built against it fails with "java_versions could not be determined".
+Pass `java_versions` (e.g. `'[8]'`) and `main_java_version` explicitly.
+</Callout>
+
+## OpenMRS defaults
+
+OpenMRS modules pass the `MAVEN_REPO_USERNAME` and `MAVEN_REPO_API_KEY` org secrets and inherit their deploy
+repositories from the OpenMRS module parent POM, so no inputs are usually needed. Keep the workflow named
+`Build with Maven` if you use [Upload coverage](/workflows/upload-coverage).
+
+## Outside OpenMRS
+
+The workflow expects an `omod` module at `omod/` and fails if no `.omod` is built. For other Maven projects use
+[Build Maven project](/workflows/build-maven).
+
+- **Java matrix:** the platform table can produce a wider matrix than you test locally (for example 8, 11, 17 and 21
+  for platform 2.8). Pass `java_versions` to narrow it.
+- **SNAPSHOT deploys:** off unless you set `deploy_snapshots`, e.g. `deploy_snapshots: ${{ github.repository_owner == 'my-org' }}`.
+  Deploys to repositories OpenMRS owns fail; see [Build Maven project](/workflows/build-maven#outside-openmrs) for
+  the exact rules. A fork that inherits the OpenMRS parent POM's repositories is the usual cause, so set
+  `<distributionManagement>` or `maven_snapshot_repository_url`.
+- **Secret names:** map differently named secrets in the caller, for example
+  `MAVEN_REPO_USERNAME: ${{ secrets.MY_MAVEN_USER }}`. `secrets: inherit` does not rename them.
+
+## Permissions
+
+The build and deploy jobs request `contents: read` only.
+
+## Inputs
+
+<WorkflowReference id="workflows/build-backend-module" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/build-backend-module" section="secrets" />

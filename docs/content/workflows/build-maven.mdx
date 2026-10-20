@@ -1,0 +1,115 @@
+---
+title: Build Maven project
+description: Build and test a Maven project across Java versions, and deploy SNAPSHOTs from release branches.
+---
+
+# Build Maven project
+
+`build-maven.yml` builds and tests any Maven project on one or more Java versions, stages JaCoCo coverage for
+[Upload coverage](/workflows/upload-coverage), and deploys SNAPSHOT artifacts after a push to a release branch. It makes no
+assumptions about OpenMRS modules; for a module with an `omod`, use [Build backend module](/workflows/build-backend-module).
+
+## Usage
+
+```yaml filename=".github/workflows/build.yml"
+name: Build with Maven
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/build-maven.yml@main
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.MAVEN_REPO_USERNAME }}
+      MAVEN_REPO_API_KEY: ${{ secrets.MAVEN_REPO_API_KEY }}
+```
+
+## What it does
+
+1. **Prepare:** runs `mvn help:effective-pom` and infers the Java versions, the SNAPSHOT server ID and repository URL,
+   and the project version. Decides whether a SNAPSHOT deploy is allowed (see [SNAPSHOT deploys](#snapshot-deploys)).
+2. **Build:** runs `mvn --batch-mode <maven_args> -Dmaven.deploy.skip` once per Java version, in parallel. On the main
+   Java version, any `jacoco.xml` reports are staged as a `coverage-reports` artifact unless `upload_coverage` is
+   `"false"`.
+3. **Deploy:** after every build passes, runs `mvn deploy -DskipTests` on the main Java version, if the deploy rules
+   allow it.
+
+## Java versions
+
+| Setting | Inferred from | Fallback |
+| --- | --- | --- |
+| `java_versions` | The OpenMRS platform version, if the project depends on `openmrs-api` or `openmrs-web` (see [Build backend module](/workflows/build-backend-module#java-versions)) | `[main_java_version]` |
+| `main_java_version` | The lowest of the inferred `java_versions`; without a platform version, the Maven compiler settings (`maven.compiler.release`, `maven.compiler.target`, or the compiler plugin's `release` / `target`) | none; the build fails |
+
+`main_java_version` is the version that stages coverage and deploys. It must be one of `java_versions`. Pass
+`java_versions` as a JSON array, e.g. `'[11, 17]'`, to build on more than one version.
+
+## SNAPSHOT deploys
+
+The deploy job runs only when all of these hold:
+
+- `deploy_snapshots` is `true` (the default in the `openmrs` org; elsewhere it defaults to `false`).
+- The POM version ends in `-SNAPSHOT`.
+- The run is a push, not a pull request.
+- The branch is a deploy branch: `main`, `master`, the repository's default branch, or a version branch such as `3.x` or `2.8.x` whose prefix matches
+  the POM version. Set `deploy_branch` to a branch name or JSON array to override.
+
+The target is `maven_snapshot_repository_url` if set, otherwise `<distributionManagement><snapshotRepository>` from the
+effective POM or, as in Maven, its `<repository>` when there is no `snapshotRepository`. The server ID, which selects
+the credentials, is `maven_server_id` if set, otherwise the ID of that repository, otherwise `openmrs-repo-snapshots`.
+
+A deploy fails with an explanation when there is no target repository, when the target is reserved for OpenMRS (see
+[Outside OpenMRS](#outside-openmrs)), or when `MAVEN_REPO_USERNAME` or `MAVEN_REPO_API_KEY` is missing. `central-publishing-maven-plugin` in the POM's build counts as a target; in a profile
+it does not, because the deploy activates no profiles. Set `deploy_snapshots: false` to build without deploying.
+
+## OpenMRS defaults
+
+OpenMRS repositories pass the `MAVEN_REPO_USERNAME` and `MAVEN_REPO_API_KEY` org secrets and inherit their deploy
+repositories from the OpenMRS parent POM, so no inputs are usually needed. Name the calling workflow `Build with Maven`
+if you use [Upload coverage](/workflows/upload-coverage), whose stub refers to it by name.
+
+## Outside OpenMRS
+
+Outside the `openmrs` GitHub org, `deploy_snapshots` defaults to `false`, so a fork that inherits a caller workflow
+builds without deploying. Turn it on from the repository owner, so that forks of your repository do not deploy either:
+
+```yaml
+    with:
+      deploy_snapshots: ${{ github.repository_owner == 'my-org' }}
+```
+
+Once it is on, deploys to repositories OpenMRS owns fail:
+
+- any URL on `mavenrepo.openmrs.org`;
+- `openmrs.jfrog.io/artifactory/` under `modules`, `snapshots` or `releases` (other repositories on that host, such as
+  `modules-pih`, are allowed);
+- Maven Central (any `maven.org`, `maven.apache.org`, `sonatype.com` or `sonatype.org` host, or a build using
+  `central-publishing-maven-plugin` outside an inactive profile), when a module's groupId is `org.openmrs` or starts with `org.openmrs.`.
+
+This usually means a fork inherited those repositories from the OpenMRS parent POM. Point
+`<distributionManagement>` or `maven_snapshot_repository_url` at your own repository, or set
+`deploy_snapshots: false`.
+
+If your secrets have different names, map them in the caller. `secrets: inherit` passes secrets through under their
+own names and does not rename them:
+
+```yaml
+    secrets:
+      MAVEN_REPO_USERNAME: ${{ secrets.MY_MAVEN_USER }}
+      MAVEN_REPO_API_KEY: ${{ secrets.MY_MAVEN_TOKEN }}
+```
+
+## Permissions
+
+The build and deploy jobs request `contents: read` only.
+
+## Inputs
+
+<WorkflowReference id="workflows/build-maven" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/build-maven" section="secrets" />
