@@ -1,24 +1,24 @@
 2:"$Sreact.fragment"
-3:"/_next/static/chunks/20i29u_0ts881.js"
-4:"/_next/static/chunks/0z136ve47bh44.js"
-5:"/_next/static/chunks/25yfb085uy-95.js"
-6:"/_next/static/chunks/2slbnl0x0022v.js"
-7:I[65275,["$3","$4","$5","$6"],"default"]
-8:I[47662,["$3","$4","$5","$6"],"default"]
-d:"/_next/static/chunks/3ylnddtnny4z-.js"
-e:I[29565,["$3","$4","$5","$6","$d"],"NotFoundLink"]
-f:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+3:"/_next/static/chunks/2if-yamug3i69.js"
+4:"/_next/static/chunks/3znmsgx9t12ar.js"
+5:"/_next/static/chunks/39sdis7fnahaq.js"
+6:"/_next/static/chunks/2400tlxx-1ir_.js"
+7:I[96838,["$3","$4","$5","$6"],"default"]
+8:I[55342,["$3","$4","$5","$6"],"default"]
+d:"/_next/static/chunks/2t5wifcpaxt_x.js"
+e:I[60468,["$3","$4","$5","$6","$d"],"NotFoundLink"]
+f:I[86429,["$3","$4","$5","$6"],"OutletBoundary"]
 10:"$Sreact.suspense"
 13:"ViewportBoundary"
-14:I[24034,["$3","$4","$5","$6"],"$13"]
+14:I[86429,["$3","$4","$5","$6"],"$13"]
 15:"MetadataBoundary"
-16:I[24034,["$3","$4","$5","$6"],"$15"]
+16:I[86429,["$3","$4","$5","$6"],"$15"]
 a:X
 a:C
 b:X
-c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:flex x:flex-col x:justify-center x:items-center x:h-[calc(100dvh-var(--nextra-navbar-height))]","children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["404: Page Not Found","$undefined"]}],["$","$Le",null,{"labels":"documentation","children":"Report a broken link"}]]}],[["$","script","script-0",{"src":"/_next/static/chunks/3ylnddtnny4z-.js","async":true}]],["$","$Lf",null,{"children":["$","$10",null,{"name":"Next.MetadataOutlet","children":"$@11"}]}]]}],"p":"$@12","v":null,"s":"$b"}}]]
+c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:flex x:flex-col x:justify-center x:items-center x:h-[calc(100dvh-var(--nextra-navbar-height))]","children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["404: Page Not Found","$undefined"]}],["$","$Le",null,{"labels":"documentation","children":"Report a broken link"}]]}],[["$","script","script-0",{"src":"/_next/static/chunks/2t5wifcpaxt_x.js","async":true}]],["$","$Lf",null,{"children":["$","$10",null,{"name":"Next.MetadataOutlet","children":"$@11"}]}]]}],"p":"$@12","v":null,"s":"$b"}}]]
 1:[["children",{"s":"/_not-found","h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
-0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[["$","meta",null,{"name":"robots","content":"noindex"}],["$","$L14",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L16",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$10",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Reusable GitHub Actions workflows for building and releasing OpenMRS modules."}]]}]}],null]}],null]}],"p":"$@17","v":null,"s":"$b"}},"a":"$@18","u":"$@19","b":"UWuWhuz7unSZz6a37-Sub"}
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[["$","meta",null,{"name":"robots","content":"noindex"}],["$","$L14",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L16",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$10",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Reusable GitHub Actions workflows for building and releasing OpenMRS modules."}]]}]}],null]}],null]}],"p":"$@17","v":null,"s":"$b"}},"a":"$@18","u":"$@19","b":"AQfv1sN_7zlMZ6kM9JmEQ"}
 11:null
 19:true
 b:300

@@ -1,17 +1,17 @@
 2:"$Sreact.fragment"
-3:"/_next/static/chunks/20i29u_0ts881.js"
-4:"/_next/static/chunks/0z136ve47bh44.js"
-5:"/_next/static/chunks/25yfb085uy-95.js"
-6:"/_next/static/chunks/2slbnl0x0022v.js"
-7:I[65275,["$3","$4","$5","$6"],"default"]
-8:I[47662,["$3","$4","$5","$6"],"default"]
-d:I[1071,["$3","$4","$5","$6"],"TOCProvider"]
-e:I[70236,["$3","$4","$5","$6"],"Sidebar"]
-f:I[21614,["$3","$4","$5","$6"],"ClientWrapper"]
+3:"/_next/static/chunks/2if-yamug3i69.js"
+4:"/_next/static/chunks/3znmsgx9t12ar.js"
+5:"/_next/static/chunks/39sdis7fnahaq.js"
+6:"/_next/static/chunks/2400tlxx-1ir_.js"
+7:I[96838,["$3","$4","$5","$6"],"default"]
+8:I[55342,["$3","$4","$5","$6"],"default"]
+d:I[84170,["$3","$4","$5","$6"],"TOCProvider"]
+e:I[26059,["$3","$4","$5","$6"],"Sidebar"]
+f:I[11619,["$3","$4","$5","$6"],"ClientWrapper"]
 27:"ViewportBoundary"
-28:I[24034,["$3","$4","$5","$6"],"$27"]
+28:I[86429,["$3","$4","$5","$6"],"$27"]
 29:"MetadataBoundary"
-2a:I[24034,["$3","$4","$5","$6"],"$29"]
+2a:I[86429,["$3","$4","$5","$6"],"$29"]
 2b:"$Sreact.suspense"
 a:X
 a:C
@@ -88,13 +88,13 @@ The build job requests `contents: read` only.
 
 <WorkflowReference id="workflows/build-frontend-module" section="inputs" />c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$Ld",null,{"value":[{"value":"Usage","id":"usage","depth":2},{"value":"What it does","id":"what-it-does","depth":2},{"value":"Inference","id":"inference","depth":2},{"value":"OpenMRS defaults","id":"openmrs-defaults","depth":2},{"value":"Outside OpenMRS","id":"outside-openmrs","depth":2},{"value":"Permissions","id":"permissions","depth":2},{"value":"Inputs","id":"inputs","depth":2}],"children":[["$","$Le",null,{}],["$","$Lf",null,{"metadata":{"title":"Build frontend module","description":"Build, lint, type-check and test an O3 frontend module, and upload its build output.","filePath":"content/workflows/build-frontend-module.mdx","timestamp":1792517993000},"sourceCode":"$10","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":["$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c","\n","$L1d","\n","$L1e","\n","$L1f","\n","$L20","\n","$L21","\n","$L22","\n","$L23","\n","$L24"]}]]}]]}]}],null,"$L25"]}],"p":"$@26","v":null,"s":"$b"}}]]
 1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"workflows/build-frontend-module","s":[]},"h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
-0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L28",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L2a",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$2b",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Build frontend module | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Build, lint, type-check and test an O3 frontend module, and upload its build output."}]]}]}],null]}],null]}],"p":"$@2c","v":null,"s":"$b"}},"a":"$@2d","u":"$@2e","b":"UWuWhuz7unSZz6a37-Sub"}
-2f:I[71998,["$3","$4","$5","$6"],""]
-30:I[57893,["$3","$4","$5","$6"],"HeadingAnchor"]
-31:I[71548,["$3","$4","$5","$6"],"CopyToClipboard"]
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L28",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L2a",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$2b",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Build frontend module | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Build, lint, type-check and test an O3 frontend module, and upload its build output."}]]}]}],null]}],null]}],"p":"$@2c","v":null,"s":"$b"}},"a":"$@2d","u":"$@2e","b":"AQfv1sN_7zlMZ6kM9JmEQ"}
+2f:I[20326,["$3","$4","$5","$6"],""]
+30:I[15577,["$3","$4","$5","$6"],"HeadingAnchor"]
+31:I[39322,["$3","$4","$5","$6"],"CopyToClipboard"]
 32:"ToggleWordWrapButton"
-33:I[72054,["$3","$4","$5","$6"],"$32"]
-38:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+33:I[91348,["$3","$4","$5","$6"],"$32"]
+38:I[86429,["$3","$4","$5","$6"],"OutletBoundary"]
 11:["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["Build frontend module","$undefined"]}]
 12:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"build-frontend-module.yml"}]," installs dependencies, builds the module, runs its lint, type checks and tests, and\nuploads the build output as a workflow artifact. It is the CI half of the frontend pipeline; publishing is done by\n",["$","$L2f",null,{"href":"/workflows/release-frontend-module","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":"Release frontend module"}],"."]}]
 13:["$","h2",null,{"id":"usage","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Usage",["$","$L30",null,{"id":"usage"}]]}]

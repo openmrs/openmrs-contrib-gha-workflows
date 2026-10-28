@@ -1,17 +1,17 @@
 2:"$Sreact.fragment"
-3:"/_next/static/chunks/20i29u_0ts881.js"
-4:"/_next/static/chunks/0z136ve47bh44.js"
-5:"/_next/static/chunks/25yfb085uy-95.js"
-6:"/_next/static/chunks/2slbnl0x0022v.js"
-7:I[65275,["$3","$4","$5","$6"],"default"]
-8:I[47662,["$3","$4","$5","$6"],"default"]
-d:I[1071,["$3","$4","$5","$6"],"TOCProvider"]
-e:I[70236,["$3","$4","$5","$6"],"Sidebar"]
-f:I[21614,["$3","$4","$5","$6"],"ClientWrapper"]
+3:"/_next/static/chunks/2if-yamug3i69.js"
+4:"/_next/static/chunks/3znmsgx9t12ar.js"
+5:"/_next/static/chunks/39sdis7fnahaq.js"
+6:"/_next/static/chunks/2400tlxx-1ir_.js"
+7:I[96838,["$3","$4","$5","$6"],"default"]
+8:I[55342,["$3","$4","$5","$6"],"default"]
+d:I[84170,["$3","$4","$5","$6"],"TOCProvider"]
+e:I[26059,["$3","$4","$5","$6"],"Sidebar"]
+f:I[11619,["$3","$4","$5","$6"],"ClientWrapper"]
 15:"ViewportBoundary"
-16:I[24034,["$3","$4","$5","$6"],"$15"]
+16:I[86429,["$3","$4","$5","$6"],"$15"]
 17:"MetadataBoundary"
-18:I[24034,["$3","$4","$5","$6"],"$17"]
+18:I[86429,["$3","$4","$5","$6"],"$17"]
 19:"$Sreact.suspense"
 a:X
 a:C
@@ -142,17 +142,17 @@ names and does not rename them, so map differently named secrets explicitly, as 
 - **Conventions are opt-in.** The PR title and description checks encode OpenMRS conventions; use them only if you
   follow those conventions. The Transifex and OWASP Dependency-Check workflows are for OpenMRS repositories only.c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$Ld",null,{"value":[{"value":"What changes outside OpenMRS","id":"what-changes-outside-openmrs","depth":2},{"value":"Turning publishing on","id":"turning-publishing-on","depth":3},{"value":"Names OpenMRS owns","id":"names-openmrs-owns","depth":3},{"value":"Setting up a frontend module","id":"setting-up-a-frontend-module","depth":2},{"value":"Check the repository fits","id":"check-the-repository-fits","depth":3},{"value":"Choose how to authenticate to npm","id":"choose-how-to-authenticate-to-npm","depth":3},{"value":"Add the caller workflow","id":"add-the-caller-workflow","depth":3},{"value":"Setting up a backend module","id":"setting-up-a-backend-module","depth":2},{"value":"Things to know","id":"things-to-know","depth":2}],"children":[["$","$Le",null,{}],["$","$Lf",null,{"metadata":{"title":"Getting started","description":"Using the OpenMRS workflows from a repository outside the OpenMRS GitHub organization.","filePath":"content/community/index.mdx","timestamp":1792517993000},"sourceCode":"$10","children":["$L11","$L12"]}]]}]}],null,"$L13"]}],"p":"$@14","v":null,"s":"$b"}}]]
 1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"community","s":[]},"h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
-0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Getting started | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Using the OpenMRS workflows from a repository outside the OpenMRS GitHub organization."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"UWuWhuz7unSZz6a37-Sub"}
-1d:I[71998,["$3","$4","$5","$6"],""]
-1e:I[57893,["$3","$4","$5","$6"],"HeadingAnchor"]
-2f:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Getting started | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Using the OpenMRS workflows from a repository outside the OpenMRS GitHub organization."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"AQfv1sN_7zlMZ6kM9JmEQ"}
+1d:I[20326,["$3","$4","$5","$6"],""]
+1e:I[15577,["$3","$4","$5","$6"],"HeadingAnchor"]
+2f:I[86429,["$3","$4","$5","$6"],"OutletBoundary"]
 11:["$","div",null,{"id":"nextra-skip-nav"}]
 12:["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["Other organizations","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"Implementers can call these workflows from their own GitHub organizations to build, test and publish OpenMRS\nfrontend and backend modules under their own npm scopes and Maven repositories. Forks work too, including forks of\nOpenMRS repositories."}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["This page covers the minimum setup. For complete caller workflows, including tagged releases, see\n",["$","$L1d",null,{"href":"/community/examples","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":"Full examples"}],"."]}],"\n",["$","h2",null,{"id":"what-changes-outside-openmrs","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["What changes outside OpenMRS",["$","$L1e",null,{"id":"what-changes-outside-openmrs"}]]}],"\n",["$","table",null,{"className":"x:block x:overflow-x-auto nextra-scrollbar x:not-first:mt-[1.25em] x:p-0","children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th",null,{"children":"Behaviour","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":["Inside ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"Elsewhere","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr",null,{"children":[["$","td",null,{"children":"Publishing npm packages, deploying SNAPSHOTs and releasing Maven modules","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"On by default","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Off unless the caller turns it on","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":["Publishing ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"@openmrs/*"}]," or ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]," to the public npm registry"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Allowed","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Fails","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":["Deploying to OpenMRS Maven repositories, or ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"org.openmrs*"}]," groupIds to Maven Central"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Allowed","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],"$L1f"],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],"$L20"]}]]}],"\n","$L21","\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b","\n","$L2c","\n","$L2d","\n","$L2e"]}]
 13:["$","$L2f",null,{"children":["$","$19",null,{"name":"Next.MetadataOutlet","children":"$@30"}]}]
 1c:true
 31:"ToggleWordWrapButton"
-32:I[72054,["$3","$4","$5","$6"],"$31"]
-33:I[71548,["$3","$4","$5","$6"],"CopyToClipboard"]
+32:I[91348,["$3","$4","$5","$6"],"$31"]
+33:I[39322,["$3","$4","$5","$6"],"CopyToClipboard"]
 b:300
 1f:["$","td",null,{"children":"Fails","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]
 20:["$","tr",null,{"children":[["$","td",null,{"children":"Reference Application build after a frontend pre-release","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"On by default","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":["Only if you set ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"downstream_repository"}]],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]

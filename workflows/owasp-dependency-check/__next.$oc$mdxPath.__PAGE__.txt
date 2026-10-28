@@ -1,17 +1,17 @@
 2:"$Sreact.fragment"
-3:"/_next/static/chunks/20i29u_0ts881.js"
-4:"/_next/static/chunks/0z136ve47bh44.js"
-5:"/_next/static/chunks/25yfb085uy-95.js"
-6:"/_next/static/chunks/2slbnl0x0022v.js"
-7:I[65275,["$3","$4","$5","$6"],"default"]
-8:I[47662,["$3","$4","$5","$6"],"default"]
-d:I[1071,["$3","$4","$5","$6"],"TOCProvider"]
-e:I[70236,["$3","$4","$5","$6"],"Sidebar"]
-f:I[21614,["$3","$4","$5","$6"],"ClientWrapper"]
+3:"/_next/static/chunks/2if-yamug3i69.js"
+4:"/_next/static/chunks/3znmsgx9t12ar.js"
+5:"/_next/static/chunks/39sdis7fnahaq.js"
+6:"/_next/static/chunks/2400tlxx-1ir_.js"
+7:I[96838,["$3","$4","$5","$6"],"default"]
+8:I[55342,["$3","$4","$5","$6"],"default"]
+d:I[84170,["$3","$4","$5","$6"],"TOCProvider"]
+e:I[26059,["$3","$4","$5","$6"],"Sidebar"]
+f:I[11619,["$3","$4","$5","$6"],"ClientWrapper"]
 15:"ViewportBoundary"
-16:I[24034,["$3","$4","$5","$6"],"$15"]
+16:I[86429,["$3","$4","$5","$6"],"$15"]
 17:"MetadataBoundary"
-18:I[24034,["$3","$4","$5","$6"],"$17"]
+18:I[86429,["$3","$4","$5","$6"],"$17"]
 19:"$Sreact.suspense"
 a:X
 a:C
@@ -117,12 +117,12 @@ dashboard repository, not the calling repository's token.
 
 <WorkflowReference id="workflows/owasp-dependency-check" section="secrets" />c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$Ld",null,{"value":[{"value":"Usage","id":"usage","depth":2},{"value":"What it does","id":"what-it-does","depth":2},{"value":"Suppressions","id":"suppressions","depth":2},{"value":"OpenMRS defaults","id":"openmrs-defaults","depth":2},{"value":"Outside OpenMRS","id":"outside-openmrs","depth":2},{"value":"Permissions","id":"permissions","depth":2},{"value":"Inputs","id":"inputs","depth":2},{"value":"Secrets","id":"secrets","depth":2}],"children":[["$","$Le",null,{}],["$","$Lf",null,{"metadata":{"title":"OWASP Dependency-Check","description":"Scan a Maven or Node.js project's dependencies for known vulnerabilities with OWASP Dependency-Check.","filePath":"content/workflows/owasp-dependency-check.mdx","timestamp":1792517993000},"sourceCode":"$10","children":["$L11","$L12"]}]]}]}],null,"$L13"]}],"p":"$@14","v":null,"s":"$b"}}]]
 1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"workflows/owasp-dependency-check","s":[]},"h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
-0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"OWASP Dependency-Check | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Scan a Maven or Node.js project's dependencies for known vulnerabilities with OWASP Dependency-Check."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"UWuWhuz7unSZz6a37-Sub"}
-1d:I[57893,["$3","$4","$5","$6"],"HeadingAnchor"]
-1e:I[71548,["$3","$4","$5","$6"],"CopyToClipboard"]
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"OWASP Dependency-Check | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Scan a Maven or Node.js project's dependencies for known vulnerabilities with OWASP Dependency-Check."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"AQfv1sN_7zlMZ6kM9JmEQ"}
+1d:I[15577,["$3","$4","$5","$6"],"HeadingAnchor"]
+1e:I[39322,["$3","$4","$5","$6"],"CopyToClipboard"]
 1f:"ToggleWordWrapButton"
-20:I[72054,["$3","$4","$5","$6"],"$1f"]
-40:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+20:I[91348,["$3","$4","$5","$6"],"$1f"]
+40:I[86429,["$3","$4","$5","$6"],"OutletBoundary"]
 11:["$","div",null,{"id":"nextra-skip-nav"}]
 12:["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["OWASP Dependency-Check","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"owasp-dependency-check.yml"}]," runs ",["$","a",null,{"href":"https://dependency-check.github.io/DependencyCheck/","target":"_blank","rel":"noreferrer","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":["OWASP Dependency-Check",[" ",["$","svg",null,{"fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":1.7,"viewBox":"0 0 24 24","height":"1em","className":"x:inline x:align-baseline x:shrink-0","children":[["$","path",null,{"d":"M7 17L17 7"}],["$","path",null,{"d":"M7 7h10v10"}]]}]]]}]," against\na Maven or Node.js project, fails the run when a vulnerability meets the CVSS threshold, and uploads the report as an\nartifact. In the ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]," org it also syncs the JSON report to the\n",["$","a",null,{"href":"https://github.com/openmrs/openmrs-contrib-dependency-vulnerability-dashboard","target":"_blank","rel":"noreferrer","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":["vulnerability dashboard",[" ",["$","svg",null,{"fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":1.7,"viewBox":"0 0 24 24","height":"1em","className":"x:inline x:align-baseline x:shrink-0","children":[["$","path",null,{"d":"M7 17L17 7"}],["$","path",null,{"d":"M7 7h10v10"}]]}]]]}],"."]}],"\n",["$","h2",null,{"id":"usage","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Usage",["$","$L1d",null,{"id":"usage"}]]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":[["$","div",null,{"className":"x:px-4 x:text-xs x:text-gray-700 x:dark:text-gray-200 x:bg-gray-100 x:dark:bg-neutral-900 x:flex x:items-center x:h-12 x:gap-2 x:rounded-t-md x:border x:border-gray-300 x:dark:border-neutral-700 x:contrast-more:border-gray-900 x:contrast-more:dark:border-gray-50 x:border-b-0","children":["$undefined",["$","span",null,{"className":"x:truncate","children":".github/workflows/owasp.yml"}],["$","$L1e",null,{"className":"x:ms-auto x:text-sm"}]]}],["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-b-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-14","children":[["$","$L20",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":"on"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  push"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n","$L21","\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b","\n","$L2c"]}]]}]]}],"\n","$L2d","\n","$L2e","\n","$L2f","\n","$L30","\n","$L31","\n","$L32","\n","$L33","\n","$L34","\n","$L35","\n","$L36","\n","$L37","\n","$L38","\n","$L39","\n","$L3a","\n","$L3b","\n","$L3c","\n","$L3d","\n","$L3e","\n","$L3f"]}]
 13:["$","$L40",null,{"children":["$","$19",null,{"name":"Next.MetadataOutlet","children":"$@41"}]}]

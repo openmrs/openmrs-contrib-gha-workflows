@@ -1,17 +1,17 @@
 2:"$Sreact.fragment"
-3:"/_next/static/chunks/20i29u_0ts881.js"
-4:"/_next/static/chunks/0z136ve47bh44.js"
-5:"/_next/static/chunks/25yfb085uy-95.js"
-6:"/_next/static/chunks/2slbnl0x0022v.js"
-7:I[65275,["$3","$4","$5","$6"],"default"]
-8:I[47662,["$3","$4","$5","$6"],"default"]
-d:I[1071,["$3","$4","$5","$6"],"TOCProvider"]
-e:I[70236,["$3","$4","$5","$6"],"Sidebar"]
-f:I[21614,["$3","$4","$5","$6"],"ClientWrapper"]
+3:"/_next/static/chunks/2if-yamug3i69.js"
+4:"/_next/static/chunks/3znmsgx9t12ar.js"
+5:"/_next/static/chunks/39sdis7fnahaq.js"
+6:"/_next/static/chunks/2400tlxx-1ir_.js"
+7:I[96838,["$3","$4","$5","$6"],"default"]
+8:I[55342,["$3","$4","$5","$6"],"default"]
+d:I[84170,["$3","$4","$5","$6"],"TOCProvider"]
+e:I[26059,["$3","$4","$5","$6"],"Sidebar"]
+f:I[11619,["$3","$4","$5","$6"],"ClientWrapper"]
 15:"ViewportBoundary"
-16:I[24034,["$3","$4","$5","$6"],"$15"]
+16:I[86429,["$3","$4","$5","$6"],"$15"]
 17:"MetadataBoundary"
-18:I[24034,["$3","$4","$5","$6"],"$17"]
+18:I[86429,["$3","$4","$5","$6"],"$17"]
 19:"$Sreact.suspense"
 a:X
 a:C
@@ -82,10 +82,10 @@ outside the `openmrs` organization both default to false.
 For signed releases (for example to Maven Central), pass `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`, and use
 `maven_profiles` to activate the profile that signs and publishes.c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$Ld",null,{"value":[{"value":"Names OpenMRS owns","id":"names-openmrs-owns","depth":2},{"value":"npm","id":"npm","depth":2},{"value":"Authentication","id":"authentication","depth":3},{"value":"Registries","id":"registries","depth":3},{"value":"Maven","id":"maven","depth":2}],"children":[["$","$Le",null,{}],["$","$Lf",null,{"metadata":{"title":"Publishing","description":"Where the workflows publish outside the OpenMRS organization, and how to authenticate.","filePath":"content/community/publishing.mdx","timestamp":1792517993000},"sourceCode":"$10","children":["$L11","$L12"]}]]}]}],null,"$L13"]}],"p":"$@14","v":null,"s":"$b"}}]]
 1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"community/publishing","s":[]},"h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
-0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Publishing | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Where the workflows publish outside the OpenMRS organization, and how to authenticate."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"UWuWhuz7unSZz6a37-Sub"}
-1d:I[57893,["$3","$4","$5","$6"],"HeadingAnchor"]
-1e:I[71998,["$3","$4","$5","$6"],""]
-2c:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L16",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L18",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$19",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Publishing | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Where the workflows publish outside the OpenMRS organization, and how to authenticate."}]]}]}],null]}],null]}],"p":"$@1a","v":null,"s":"$b"}},"a":"$@1b","u":"$@1c","b":"AQfv1sN_7zlMZ6kM9JmEQ"}
+1d:I[15577,["$3","$4","$5","$6"],"HeadingAnchor"]
+1e:I[20326,["$3","$4","$5","$6"],""]
+2c:I[86429,["$3","$4","$5","$6"],"OutletBoundary"]
 11:["$","div",null,{"id":"nextra-skip-nav"}]
 12:["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["Publishing","$undefined"]}],"\n",["$","h2",null,{"id":"names-openmrs-owns","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Names OpenMRS owns",["$","$L1d",null,{"id":"names-openmrs-owns"}]]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["Outside the ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]," organization, nothing is published unless the caller turns publishing on (see\n",["$","$L1e",null,{"href":"/community#turning-publishing-on","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":"Turning publishing on"}],"). Once it is on, publishing to names OpenMRS owns on public\nregistries fails, since that is not a supported setup."]}],"\n",["$","table",null,{"className":"x:block x:overflow-x-auto nextra-scrollbar x:not-first:mt-[1.25em] x:p-0","children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th",null,{"children":"Ecosystem","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":["Not published outside ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"Allowed","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr",null,{"children":[["$","td",null,{"children":"npm","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"@openmrs/*"}]," and ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs"}]," on ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"registry.npmjs.org"}]," (or ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"registry.yarnpkg.com"}],")"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Any other name; any name on another registry","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":"Maven","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"mavenrepo.openmrs.org"}],"; ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs.jfrog.io/artifactory/{modules,snapshots,releases}"}],"; ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"org.openmrs*"}]," groupIds on Maven Central"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":["Any other repository, including other paths on ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"openmrs.jfrog.io"}]],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]]}]]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["A fork of an OpenMRS module publishes once you rename its packages (or change its POM’s ","$L1f",") to\ntargets you own."]}],"\n","$L20","\n","$L21","\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b"]}]
 13:["$","$L2c",null,{"children":["$","$19",null,{"name":"Next.MetadataOutlet","children":"$@2d"}]}]
