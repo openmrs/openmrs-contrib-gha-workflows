@@ -1,0 +1,83 @@
+2:"$Sreact.fragment"
+3:"/pr-preview/pr-70/_next/static/chunks/20i29u_0ts881.js"
+4:"/pr-preview/pr-70/_next/static/chunks/226yr05peqyk3.js"
+5:"/pr-preview/pr-70/_next/static/chunks/25yfb085uy-95.js"
+6:"/pr-preview/pr-70/_next/static/chunks/2slbnl0x0022v.js"
+7:I[65275,["$3","$4","$5","$6"],"default"]
+8:I[47662,["$3","$4","$5","$6"],"default"]
+d:I[1071,["$3","$4","$5","$6"],"TOCProvider"]
+e:I[70236,["$3","$4","$5","$6"],"Sidebar"]
+f:I[21614,["$3","$4","$5","$6"],"ClientWrapper"]
+11:I[57893,["$3","$4","$5","$6"],"HeadingAnchor"]
+1c:"ViewportBoundary"
+1d:I[24034,["$3","$4","$5","$6"],"$1c"]
+1e:"MetadataBoundary"
+1f:I[24034,["$3","$4","$5","$6"],"$1e"]
+20:"$Sreact.suspense"
+a:X
+a:C
+b:X
+10:T4ad,---
+title: Capture Docker logs
+description: Write the logs of every Docker container on the runner to files.
+---
+
+# Capture Docker logs
+
+The `capture-docker-logs` action writes the logs of every Docker container on the runner, running or stopped, to
+`<dest>/<container name>.log`. It is meant for end-to-end test jobs that start a Docker stack and upload its logs when
+tests fail.
+
+## Usage
+
+Set the step's `if:` to match when you want the logs, and upload the directory afterwards:
+
+```yaml
+- name: Capture server logs
+  if: always()
+  uses: openmrs/openmrs-contrib-gha-workflows/.github/actions/capture-docker-logs@main
+  with:
+    dest: logs
+
+- name: Upload logs as artifact
+  if: always()
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: server-logs
+    path: logs
+```
+
+## What it does
+
+1. Creates `dest` if it does not exist.
+2. Lists every container, running or stopped, and writes each one's logs to `<dest>/<container name>.log`.
+
+If one container's logs cannot be read, the action skips it with a warning. It fails only if it cannot list the
+containers.
+
+## Inputs
+
+<WorkflowReference id="actions/capture-docker-logs" section="inputs" />c:[["children",{"s":"__PAGE__","h":160,"d":{"r":["$","$2","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$Ld",null,{"value":[{"value":"Usage","id":"usage","depth":2},{"value":"What it does","id":"what-it-does","depth":2},{"value":"Inputs","id":"inputs","depth":2}],"children":[["$","$Le",null,{}],["$","$Lf",null,{"metadata":{"title":"Capture Docker logs","description":"Write the logs of every Docker container on the runner to files.","filePath":"content/actions/capture-docker-logs.mdx","timestamp":1792517993000},"sourceCode":"$10","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["Capture Docker logs","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["The ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"capture-docker-logs"}]," action writes the logs of every Docker container on the runner, running or stopped, to\n",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"<dest>/<container name>.log"}],". It is meant for end-to-end test jobs that start a Docker stack and upload its logs when\ntests fail."]}],"\n",["$","h2",null,{"id":"usage","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Usage",["$","$L11",null,{"id":"usage"}]]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["Set the step’s ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"if:"}]," to match when you want the logs, and upload the directory afterwards:"]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":["$L12","$L13"]}],"$L14"]}]]}],"\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19"]}]]}]]}]}],null,"$L1a"]}],"p":"$@1b","v":null,"s":"$b"}}]]
+1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"actions/capture-docker-logs","s":[]},"h":64,"d":{"r":["$","$2","c",{"children":[null,["$","$L7",null,{"parallelRouterKey":"children","template":["$","$L8",null,{}]}]]}],"p":"$@9","v":"$a","s":"$b"},"c":"$Qc"}]]
+0:{"t":{"t":{"s":"","h":16,"c":"$Q1"},"h":{"r":["$","$2","h",{"children":[null,["$","$L1d",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","$L1f",null,{"children":[["$","div",null,{"hidden":true,"children":["$","$20",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"Capture Docker logs | OpenMRS GitHub Actions Workflows"}],["$","meta","1",{"name":"description","content":"Write the logs of every Docker container on the runner to files."}]]}]}],null]}],null]}],"p":"$@21","v":null,"s":"$b"}},"a":"$@22","u":"$@23","b":"u3C3njj1RvKeBOlDZ7LpS"}
+24:"ToggleWordWrapButton"
+25:I[72054,["$3","$4","$5","$6"],"$24"]
+26:I[71548,["$3","$4","$5","$6"],"CopyToClipboard"]
+27:I[24034,["$3","$4","$5","$6"],"OutletBoundary"]
+12:["$","$L25",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}]
+13:["$","$L26",null,{"className":""}]
+14:["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"- "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"name"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Capture server logs"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  if"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"always()"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  uses"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"openmrs/openmrs-contrib-gha-workflows/.github/actions/capture-docker-logs@main"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  with"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    dest"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"logs"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"- "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"name"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Upload logs as artifact"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  if"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"always()"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  uses"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"}],["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":" # v7.0.1"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"  with"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    name"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"server-logs"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    path"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"logs"}]]}]]}]
+15:["$","h2",null,{"id":"what-it-does","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["What it does",["$","$L11",null,{"id":"what-it-does"}]]}]
+16:["$","ol",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-decimal x:ms-6","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":["Creates ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"dest"}]," if it does not exist."]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["Lists every container, running or stopped, and writes each one’s logs to ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"<dest>/<container name>.log"}],"."]}],"\n"]}]
+17:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"If one container’s logs cannot be read, the action skips it with a warning. It fails only if it cannot list the\ncontainers."}]
+18:["$","h2",null,{"id":"inputs","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Inputs",["$","$L11",null,{"id":"inputs"}]]}]
+19:["$","div",null,{"className":"workflow-reference","children":["$","table",null,{"children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th","Name",{"children":"Name","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th","Type",{"children":"Type","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th","Default",{"children":"Default","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th","Description",{"children":"Description","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr","dest",{"children":[["$","td","0",{"children":["$","$2","name",{"children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"dest"}],false]}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td","1",{"children":"string","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td","2",{"children":["$","code",null,{"className":"nextra-code","dir":"ltr","children":"logs"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td","3",{"children":["$","$2","description",{"children":["Directory to write the log files to. Created if it does not exist."]}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]]}]],"className":"x:block x:overflow-x-auto"}]}]
+1a:["$","$L27",null,{"children":["$","$20",null,{"name":"Next.MetadataOutlet","children":"$@28"}]}]
+23:true
+b:300
+28:null
+b:C
+22:0
+9:"$undefined"
+21:"$undefined"
+1b:"$undefined"
