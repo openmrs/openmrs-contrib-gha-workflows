@@ -425,7 +425,7 @@ jobs:
         timeout-minutes: 20
         env:
           PACKAGES: ${{ needs.pre_release.outputs.packages }}
-        run: python3 .gha-workflows/.github/scripts/wait_for_npm_packages.py wait --timeout 900
+        run: python3 .gha-workflows/.github/scripts/wait_for_npm_packages.py wait
 
       - name: 🔑 Generate GitHub App token
         id: app-token

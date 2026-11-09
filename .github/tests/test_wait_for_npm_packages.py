@@ -157,15 +157,12 @@ class TestRecord(unittest.TestCase):
 
 class TestMain(unittest.TestCase):
     def run_main(self, raw, missing):
-        with patch.object(sys, "argv", ["wait_for_npm_packages.py", "wait", "--timeout", "5"]), \
-                patch.dict(os.environ, {"PACKAGES": raw}), \
-                patch.object(waiter, "wait", return_value=missing) as waited:
-            waiter.main()
+        with patch.dict(os.environ, {"PACKAGES": raw}), patch.object(waiter, "wait", return_value=missing) as waited:
+            waiter.main(["wait_for_npm_packages.py", "wait"])
         return waited
 
     def test_succeeds_once_everything_is_listed(self):
-        waited = self.run_main(json.dumps([pkg()]), {})
-        self.assertEqual(waited.call_args[0][:3], ([pkg()], 5, 10))
+        self.assertEqual(self.run_main(json.dumps([pkg()]), {}).call_args[0], ([pkg()],))
 
     def test_fails_naming_what_never_appeared(self):
         with self.assertRaises(SystemExit) as raised:
@@ -174,12 +171,17 @@ class TestMain(unittest.TestCase):
         self.assertIn("was not triggered", str(raised.exception))
 
     def test_fails_before_polling_on_a_bad_package_list(self):
-        with patch.object(sys, "argv", ["wait_for_npm_packages.py", "wait"]), \
-                patch.dict(os.environ, {"PACKAGES": ""}), patch.object(waiter, "wait") as waited, \
+        with patch.dict(os.environ, {"PACKAGES": ""}), patch.object(waiter, "wait") as waited, \
                 self.assertRaises(SystemExit) as raised:
-            waiter.main()
+            waiter.main(["wait_for_npm_packages.py", "wait"])
         waited.assert_not_called()
         self.assertIn("recorded no package list", str(raised.exception))
+
+    def test_rejects_an_unknown_command(self):
+        for argv in (["w.py"], ["w.py", "poll"], ["w.py", "wait", "extra"]):
+            with self.subTest(argv=argv), self.assertRaises(SystemExit) as raised:
+                waiter.main(argv)
+            self.assertIn("usage: w.py record|wait", str(raised.exception))
 
 
 if __name__ == "__main__":

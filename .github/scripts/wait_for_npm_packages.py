@@ -7,11 +7,11 @@ so a build dispatched straight after a publish can still resolve the previous
 version. Waiting on the per-version endpoint would not help: it is served
 uncached and answers as soon as the publish lands.
 
-  record  run after the pre-release version is set; writes the `packages` output
-  wait    reads PACKAGES (that output) and polls until every version is listed
+`record` runs after the pre-release version is set and writes the `packages`
+output. `wait` takes that output as PACKAGES, a JSON array of {name, version,
+registry}, and polls every INTERVAL seconds for up to TIMEOUT.
 """
 
-import argparse
 import json
 import os
 import sys
@@ -25,6 +25,9 @@ from utils import publishable_packages, write_github_outputs
 
 # The Accept header pacote sends; the CDN caches each Accept variant separately.
 INSTALL_ACCEPT = "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*"
+
+TIMEOUT = 900
+INTERVAL = 10
 
 LISTED, NOT_LISTED, NO_ACCESS, UNREACHABLE = "listed", "not listed", "no access", "unreachable"
 
@@ -76,7 +79,7 @@ def parse_packages(raw):
     return packages, None
 
 
-def wait(packages, timeout, interval, state=listed_state, sleep=time.sleep, clock=time.monotonic):
+def wait(packages, timeout=TIMEOUT, interval=INTERVAL, state=listed_state, sleep=time.sleep, clock=time.monotonic):
     """Poll until every package is listed; return the ones still pending at the deadline."""
     deadline = clock() + timeout
     pending = {f"{p['name']}@{p['version']}": p for p in packages}
@@ -96,28 +99,25 @@ def wait(packages, timeout, interval, state=listed_state, sleep=time.sleep, cloc
         sleep(interval)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=["record", "wait"])
-    parser.add_argument("--timeout", type=int, default=900)
-    parser.add_argument("--interval", type=int, default=10)
-    args = parser.parse_args()
-
-    if args.command == "record":
-        record()
-        return
-
-    packages, error = parse_packages(os.environ.get("PACKAGES", ""))
+def wait_for_recorded(env):
+    packages, error = parse_packages(env.get("PACKAGES", ""))
     if error:
         sys.exit(f"::error::{error}")
-    missing = wait(packages, args.timeout, args.interval)
+    missing = wait(packages)
     if missing:
         details = "; ".join(f"{key} ({state})" for key, state in missing.items())
         sys.exit(
-            f"::error::Gave up after {args.timeout}s waiting for npm to serve {details}. "
+            f"::error::Gave up after {TIMEOUT}s waiting for npm to serve {details}. "
             "The downstream build was not triggered, because it would resolve an older version."
         )
 
 
+def main(argv):
+    commands = {"record": lambda env: record(), "wait": wait_for_recorded}
+    if len(argv) != 2 or argv[1] not in commands:
+        sys.exit(f"usage: {os.path.basename(argv[0])} record|wait")
+    commands[argv[1]](os.environ)
+
+
 if __name__ == "__main__":
-    main()
+    main(sys.argv)
