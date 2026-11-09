@@ -12,6 +12,7 @@ output. `wait` takes that output as PACKAGES, a JSON array of {name, version,
 registry}, and polls every INTERVAL seconds for up to TIMEOUT.
 """
 
+import gzip
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import publishable_packages, write_github_outputs
@@ -35,15 +37,18 @@ LISTED, NOT_LISTED, NO_ACCESS, UNREACHABLE = "listed", "not listed", "no access"
 def listed_state(package, version, registry):
     """Whether the cached abbreviated document for `package` lists `version`."""
     url = f"{registry.rstrip('/')}/{urllib.parse.quote(package, safe='@')}"
-    request = urllib.request.Request(url, headers={"Accept": INSTALL_ACCEPT})
+    request = urllib.request.Request(url, headers={"Accept": INSTALL_ACCEPT, "Accept-Encoding": "gzip"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            document = json.load(response)
+            body = response.read()
+            if response.headers.get("Content-Encoding") == "gzip":
+                body = gzip.decompress(body)
+            document = json.loads(body)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return NOT_LISTED
         return NO_ACCESS if e.code in (401, 403) else UNREACHABLE
-    except (OSError, ValueError):
+    except (OSError, ValueError, EOFError, zlib.error):
         return UNREACHABLE
     return LISTED if version in (document.get("versions") or {}) else NOT_LISTED
 

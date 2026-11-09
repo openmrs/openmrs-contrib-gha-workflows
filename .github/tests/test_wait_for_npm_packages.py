@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Tests for wait_for_npm_packages.py."""
 
+import gzip
 import io
 import json
 import os
@@ -20,6 +21,12 @@ def pkg(name="@o/a", version="1.0.1-pre.7", registry=NPMJS):
     return {"name": name, "version": version, "registry": registry}
 
 
+class FakeResponse(io.BytesIO):
+    def __init__(self, body, encoding=None):
+        super().__init__(body)
+        self.headers = {"Content-Encoding": encoding} if encoding else {}
+
+
 class FakeClock:
     def __init__(self):
         self.now = 0.0
@@ -32,12 +39,13 @@ class FakeClock:
 
 
 class TestListedState(unittest.TestCase):
-    def fetch(self, response=None, error=None):
+    def fetch(self, response=None, error=None, gzipped=False):
         def urlopen(request, timeout):
             self.request = request
             if error:
                 raise error
-            return io.BytesIO(json.dumps(response).encode())
+            body = json.dumps(response).encode()
+            return FakeResponse(gzip.compress(body), "gzip") if gzipped else FakeResponse(body)
 
         with patch.object(waiter.urllib.request, "urlopen", urlopen):
             return waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS + "/")
@@ -49,6 +57,11 @@ class TestListedState(unittest.TestCase):
         self.fetch({"versions": {}})
         self.assertEqual(self.request.full_url, "https://registry.npmjs.org/@o%2Fa")
         self.assertEqual(self.request.get_header("Accept"), waiter.INSTALL_ACCEPT)
+        self.assertEqual(self.request.get_header("Accept-encoding"), "gzip")
+
+    def test_reads_a_gzipped_document(self):
+        self.assertEqual(self.fetch({"versions": {"1.0.1-pre.7": {}}}, gzipped=True), waiter.LISTED)
+        self.assertEqual(self.fetch({"versions": {"1.0.1-pre.6": {}}}, gzipped=True), waiter.NOT_LISTED)
 
     def test_listed_when_the_document_has_the_version(self):
         self.assertEqual(self.fetch({"versions": {"1.0.1-pre.7": {}}}), waiter.LISTED)
@@ -66,8 +79,12 @@ class TestListedState(unittest.TestCase):
     def test_unreachable_on_server_errors_and_bad_json(self):
         self.assertEqual(self.fetch(error=self.http_error(503)), waiter.UNREACHABLE)
         self.assertEqual(self.fetch(error=OSError("reset")), waiter.UNREACHABLE)
-        with patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: io.BytesIO(b"<html>")):
-            self.assertEqual(waiter.listed_state("@o/a", "1", NPMJS), waiter.UNREACHABLE)
+        for body in (FakeResponse(b"<html>"), FakeResponse(b"not gzip", "gzip"),
+                     FakeResponse(gzip.compress(b"{}")[:-4], "gzip"),
+                     FakeResponse(gzip.compress(b"{}")[:10] + b"\xff" * 20, "gzip")):
+            with self.subTest(body=body.getvalue()), \
+                    patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: body):
+                self.assertEqual(waiter.listed_state("@o/a", "1", NPMJS), waiter.UNREACHABLE)
 
 
 class TestWait(unittest.TestCase):
