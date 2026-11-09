@@ -50,7 +50,7 @@ On each push to the default branch the workflow:
 2. Sets that version, builds, and commits the change locally (the commit is never pushed).
 3. Publishes with the pre-release publish command, which targets the `next` dist-tag.
 4. Uploads the build output as `<repository name>-packages`.
-5. Triggers the [downstream build](#downstream-build), if one is configured.
+5. Triggers the [downstream build](#downstream-build), if one is configured, once npm serves every published package.
 
 Pre-releases are serialized per branch, so an older run cannot overwrite `next` after a newer one. Add `[skip-pre]` to
 the head commit message to skip the pre-release for a push.
@@ -277,6 +277,13 @@ to rebuild a distribution that consumes `next`:
 The dispatch runs `gh workflow run` with no inputs, so the target workflow needs a `workflow_dispatch` trigger. The
 token needs `actions: write` on the downstream repository. Set `trigger_downstream_build: false` to turn it off;
 `trigger_refapp_build` is a deprecated alias and either set to `false` disables the dispatch.
+
+The dispatch waits until the registry serves the new pre-release of every published package, polling every 10 seconds
+for up to 15 minutes. npm's CDN caches package documents for up to five minutes, so a build dispatched straight after
+the publish could still resolve the previous version of `next`. The wait checks the same abbreviated package document
+that `npm install` and `openmrs assemble` read. If a package is still missing after 15 minutes, the job fails and
+nothing is dispatched. A registry that needs credentials to read a package is not waited on, and the job logs a
+warning instead.
 
 ## GitHub App or PAT
 
