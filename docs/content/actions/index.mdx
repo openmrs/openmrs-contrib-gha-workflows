@@ -1,0 +1,26 @@
+---
+title: Actions
+description: Composite actions in this repository.
+---
+
+# Actions
+
+This repository contains a handful of composite actions under `.github/actions`.
+
+## For callers
+
+- [Capture Docker logs](/actions/capture-docker-logs): write the logs of every Docker container on the runner to
+  files, for upload when an end-to-end test fails.
+
+## Internal
+
+The other actions are building blocks of the reusable workflows. Their inputs and outputs change with the workflows
+that use them, so call the workflows rather than these actions directly.
+
+| Action | Purpose |
+| --- | --- |
+| `infer-frontend-params` | Infers Node.js version and build, verify and publish commands from `package.json` for the frontend workflows. |
+| `infer-backend-params` | Infers Java versions, Maven server IDs and URLs and project coordinates from `pom.xml` for the Maven workflows. |
+| `maven-build` | Runs the Maven build and stages JaCoCo reports for the Maven build workflows. |
+| `maven-deploy` | Deploys SNAPSHOT artifacts for the Maven build workflows. |
+| `resolve-maven-deploy-params` | Resolves the SNAPSHOT server ID and deploy branches for the Maven build workflows. |

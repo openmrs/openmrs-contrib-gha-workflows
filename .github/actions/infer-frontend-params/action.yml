@@ -44,6 +44,14 @@ inputs:
     description: 'Override: Command to set the release version (RELEASE_VERSION is available as an env var)'
     required: false
     default: ''
+  current_version_command:
+    description: 'Override: Command that prints the current version'
+    required: false
+    default: ''
+  turbo_concurrency:
+    description: 'Turborepo --concurrency for inferred turbo commands; not added where the repo script sets its own. Empty for none.'
+    required: false
+    default: '5'
   resolve_pre_release:
     description: 'Whether to resolve pre-release parameters. Set to "false" for release-only jobs.'
     required: false
@@ -80,6 +88,9 @@ outputs:
   release_version_command:
     description: 'Resolved release version command'
     value: ${{ steps.resolve.outputs.release_version_command }}
+  current_version_command:
+    description: 'Resolved command that prints the current version'
+    value: ${{ steps.resolve.outputs.current_version_command }}
 
 runs:
   using: composite
@@ -92,6 +103,8 @@ runs:
     - name: Infer frontend parameters from package.json
       id: infer-frontend
       shell: bash
+      env:
+        TURBO_CONCURRENCY: ${{ inputs.turbo_concurrency }}
       run: python3 "${{ github.action_path }}/../../scripts/infer_frontend_params.py"
 
     - name: Resolve parameters (explicit > inferred > default)
@@ -108,6 +121,7 @@ runs:
         INPUT_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ inputs.pre_release_patch_publish_command }}
         INPUT_RELEASE_PUBLISH_COMMAND: ${{ inputs.release_publish_command }}
         INPUT_RELEASE_VERSION_COMMAND: ${{ inputs.release_version_command }}
+        INPUT_CURRENT_VERSION_COMMAND: ${{ inputs.current_version_command }}
         RESOLVE_PRE_RELEASE: ${{ inputs.resolve_pre_release }}
         INFERRED_NODE_VERSION: ${{ steps.infer-node.outputs.node_version }}
         INFERRED_BUILD_COMMAND: ${{ steps.infer-frontend.outputs.build_command }}
@@ -119,6 +133,7 @@ runs:
         INFERRED_PRE_RELEASE_PATCH_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.pre_release_patch_publish_command }}
         INFERRED_RELEASE_PUBLISH_COMMAND: ${{ steps.infer-frontend.outputs.release_publish_command }}
         INFERRED_RELEASE_VERSION_COMMAND: ${{ steps.infer-frontend.outputs.release_version_command }}
+        INFERRED_CURRENT_VERSION_COMMAND: ${{ steps.infer-frontend.outputs.current_version_command }}
       run: |
         echo "node_version=${INPUT_NODE_VERSION:-${INFERRED_NODE_VERSION:-22}}" >> "$GITHUB_OUTPUT"
         echo "build_command=${INPUT_BUILD_COMMAND:-${INFERRED_BUILD_COMMAND:-yarn turbo run build --color --concurrency=5}}" >> "$GITHUB_OUTPUT"
@@ -132,6 +147,7 @@ runs:
         fi
         echo "release_publish_command=${INPUT_RELEASE_PUBLISH_COMMAND:-${INFERRED_RELEASE_PUBLISH_COMMAND:-yarn npm publish --access public}}" >> "$GITHUB_OUTPUT"
         echo "release_version_command=${INPUT_RELEASE_VERSION_COMMAND:-${INFERRED_RELEASE_VERSION_COMMAND:-yarn version \"\$RELEASE_VERSION\"}}" >> "$GITHUB_OUTPUT"
+        echo "current_version_command=${INPUT_CURRENT_VERSION_COMMAND:-${INFERRED_CURRENT_VERSION_COMMAND:-node -p \"require('./package.json').version\"}}" >> "$GITHUB_OUTPUT"
 
         # artifact_path may be multiline (monorepo with multiple workspace globs)
         RESOLVED_ARTIFACT_PATH="${INPUT_ARTIFACT_PATH:-${INFERRED_ARTIFACT_PATH:-dist}}"

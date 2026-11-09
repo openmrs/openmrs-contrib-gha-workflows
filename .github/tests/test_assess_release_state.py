@@ -15,18 +15,61 @@ import assess_release_state as ars
 VER = "9.9.9"
 
 
+def pkg(name, version=VER, registry="https://registry.npmjs.org"):
+    return {"name": name, "version": version, "registry": registry}
+
+
 class TestClassify(unittest.TestCase):
     def test_partitions_on_probe(self):
         states = {"@o/a": "live", "@o/b": "missing", "@o/c": "unknown"}
-        result = ars.classify(list(states), VER, probe=lambda p, v: states[p])
+        result = ars.classify([pkg(n) for n in states], probe=lambda n, v, r: states[n])
         self.assertEqual(
-            result, {"live": ["@o/a"], "missing": ["@o/b"], "unknown": ["@o/c"]}
+            result,
+            {"live": [f"@o/a@{VER}"], "missing": [f"@o/b@{VER}"], "unknown": [f"@o/c@{VER}"]},
         )
+
+    def test_probes_each_package_at_its_own_version_and_registry(self):
+        calls = []
+        ars.classify(
+            [pkg("@o/a", "1.0.1"), pkg("@o/b", "2.1.1", "https://npm.example.org")],
+            probe=lambda *args: calls.append(args) or "missing",
+        )
+        self.assertEqual(
+            calls,
+            [("@o/a", "1.0.1", "https://registry.npmjs.org"),
+             ("@o/b", "2.1.1", "https://npm.example.org")],
+        )
+
+    def test_recorded_packages_are_live_without_probing(self):
+        def probe(*args):
+            raise AssertionError("probed a recorded package")
+
+        result = ars.classify([pkg("@o/a")], published={f"@o/a@{VER}"}, probe=probe)
+        self.assertEqual(result["live"], [f"@o/a@{VER}"])
+
+    def test_unresolved_registry_is_unknown(self):
+        def probe(*args):
+            raise AssertionError("probed a package with no registry")
+
+        result = ars.classify([pkg("@o/a", registry=None)], probe=probe)
+        self.assertEqual(result["unknown"], [f"@o/a@{VER}"])
 
     def test_empty_package_list(self):
         self.assertEqual(
-            ars.classify([], VER), {"live": [], "missing": [], "unknown": []}
+            ars.classify([]), {"live": [], "missing": [], "unknown": []}
         )
+
+
+class TestReadPublishLog(unittest.TestCase):
+    def test_missing_or_unset_log_is_empty(self):
+        self.assertEqual(ars.read_publish_log(""), set())
+        self.assertEqual(ars.read_publish_log("/nonexistent/published.txt"), set())
+
+    def test_reads_entries(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("@o/a@1.0.0\n\n@o/b@2.0.0\n")
+        self.addCleanup(os.unlink, f.name)
+        self.assertEqual(ars.read_publish_log(f.name), {"@o/a@1.0.0", "@o/b@2.0.0"})
 
 
 class TestSafeToRollBack(unittest.TestCase):
@@ -116,19 +159,14 @@ class TestMain(unittest.TestCase):
             "GITHUB_OUTPUT": self.output,
             "STATE_FILE": self.state_file,
             "RELEASE_TAG": "v" + VER,
-            "RELEASE_VERSION": VER,
             "PUSH_OUTCOME": "success",
             "PUBLISH_ONLY": "false",
             "PUBLISH_RAN": "true",
         })
         self._env.start()
         self.addCleanup(self._env.stop)
-        workspaces = [
-            {"location": ".", "name": "@o/root"},
-            {"location": "packages/a", "name": "@o/a"},
-        ]
         for target, kwargs in (
-            ("yarn_workspaces", {"return_value": workspaces}),
+            ("publishable_packages", {"return_value": [pkg("@o/a")]}),
             ("npm_version_state", {"return_value": "missing"}),
         ):
             p = patch.object(ars, target, **kwargs)
@@ -143,18 +181,24 @@ class TestMain(unittest.TestCase):
         with open(self.state_file) as f:
             self.assertEqual(
                 json.load(f),
-                {"push": "pushed", "live": [], "missing": ["@o/a"], "unknown": []},
+                {"push": "pushed", "live": [], "missing": [f"@o/a@{VER}"], "unknown": []},
             )
         with open(self.output) as f:
             output = f.read()
         self.assertIn("push=pushed", output)
         self.assertIn("safe_to_roll_back=true", output)
 
+    def test_unlisted_packages_block_rollback(self):
+        self.publishable_packages.return_value = None
+        ars.main()
+        with open(self.output) as f:
+            self.assertIn("safe_to_roll_back=false", f.read())
+
     def test_skips_npm_when_the_tag_did_not_land(self):
         os.environ["PUSH_OUTCOME"] = "failure"
         with patch.object(ars, "tag_landed", return_value="not_pushed"):
             ars.main()
-        self.yarn_workspaces.assert_not_called()
+        self.publishable_packages.assert_not_called()
         self.sleep.assert_not_called()
         with open(self.output) as f:
             self.assertIn("safe_to_roll_back=false", f.read())
@@ -174,6 +218,16 @@ class TestMain(unittest.TestCase):
         os.environ["PUBLISH_RAN"] = "false"
         ars.main()
         self.sleep.assert_not_called()
+
+    def test_recorded_publish_blocks_rollback(self):
+        log = os.path.join(self._tmp.name, "published.txt")
+        with open(log, "w") as f:
+            f.write(f"@o/a@{VER}\n")
+        os.environ["PUBLISH_LOG"] = log
+        ars.main()
+        self.npm_version_state.assert_not_called()
+        with open(self.output) as f:
+            self.assertIn("safe_to_roll_back=false", f.read())
 
     def test_live_package_blocks_rollback(self):
         self.npm_version_state.return_value = "live"

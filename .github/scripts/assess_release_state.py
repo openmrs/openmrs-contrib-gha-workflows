@@ -8,8 +8,9 @@ publish-only mode) fails without a successful publish. Establishes:
   still have landed (e.g. the connection dropped after GitHub accepted it), so
   the remote is checked for the exact tag object this run created; only this
   run can have pushed that object.
-- for each publishable workspace, whether it is live, missing or unknown on
-  npm (see `npm_version_state`).
+- for each publishable workspace, at its own version, whether it is live,
+  missing or unknown on the registry Yarn publishes it to (see
+  `npm_version_state`).
 
 Rolling back, i.e. deleting the pushed tag and reverting the release commit,
 is only safe when this run pushed the tag and npm has none of the packages.
@@ -19,12 +20,14 @@ stay.
 Configuration comes from the environment:
 
   RELEASE_TAG      tag this run created or reused
-  RELEASE_VERSION  version behind the release tag
   PUSH_OUTCOME     outcome of the push step ("success", "failure", ...)
   PUBLISH_ONLY     "true" when this run reused an existing tag
   PUBLISH_RAN      "true" when the publish step started; the registry is then
                    given time to serve anything that failed run uploaded
   NODE_AUTH_TOKEN  optional npm token, to see restricted packages
+  PUBLISH_LOG      file of `name@version` lines the publish step recorded as
+                   published; optional, since a repo's own publish script
+                   records nothing
   STATE_FILE       where to write the result as JSON, for the report
 
 Writes `push` (pushed, not_pushed, unknown or preexisting) and
@@ -40,9 +43,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
     npm_version_state,
-    publishable_package_names,
+    publishable_packages,
     write_github_outputs,
-    yarn_workspaces,
 )
 
 SETTLE_SECONDS = 60
@@ -81,13 +83,32 @@ def push_state(tag, push_outcome, publish_only, landed=None):
     return (landed or tag_landed)(tag)
 
 
-def classify(packages, version, probe=None):
-    """Return {"live": [...], "missing": [...], "unknown": [...]} for `packages`."""
+def classify(packages, published=(), probe=None):
+    """Return {"live": [...], "missing": [...], "unknown": [...]} of `name@version` entries.
+
+    Packages the publish step recorded as published are live without asking the
+    registry; the rest are probed at their own version on their own registry,
+    or are unknown if that registry could not be determined.
+    """
     probe = probe or npm_version_state
     state = {"live": [], "missing": [], "unknown": []}
     for package in packages:
-        state[probe(package, version)].append(package)
+        entry = f"{package['name']}@{package['version']}"
+        if entry in published:
+            state["live"].append(entry)
+        elif not package["registry"]:
+            state["unknown"].append(entry)
+        else:
+            state[probe(package["name"], package["version"], package["registry"])].append(entry)
     return state
+
+
+def read_publish_log(path):
+    """Return the set of `name@version` entries the publish step recorded."""
+    if not path or not os.path.exists(path):
+        return set()
+    with open(path) as f:
+        return {line.strip() for line in f if line.strip()}
 
 
 def safe_to_roll_back(state):
@@ -102,7 +123,6 @@ def safe_to_roll_back(state):
 
 def main():
     env = os.environ.get
-    version = env("RELEASE_VERSION", "").strip()
     push = push_state(
         env("RELEASE_TAG", "").strip(),
         env("PUSH_OUTCOME", ""),
@@ -116,8 +136,15 @@ def main():
         if env("PUBLISH_RAN", "") == "true":
             time.sleep(SETTLE_SECONDS)
         token = env("NODE_AUTH_TOKEN") or None
-        packages = publishable_package_names(yarn_workspaces(("--no-private",)))
-        state.update(classify(packages, version, probe=lambda p, v: npm_version_state(p, v, token)))
+        packages = publishable_packages()
+        if packages is None:
+            state["unknown"].append("(the packages could not be listed)")
+        else:
+            state.update(classify(
+                packages,
+                read_publish_log(env("PUBLISH_LOG")),
+                probe=lambda name, version, registry: npm_version_state(name, version, token, registry),
+            ))
 
     with open(os.environ["STATE_FILE"], "w") as f:
         json.dump(state, f)

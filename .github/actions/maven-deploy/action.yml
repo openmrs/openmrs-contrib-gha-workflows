@@ -21,10 +21,25 @@ inputs:
   maven_repo_api_key:
     description: 'Maven repository API key / password'
     required: true
+  repository_url:
+    description: 'Repository URL to deploy SNAPSHOTs to instead of <distributionManagement><snapshotRepository>'
+    required: false
+    default: ''
 
 runs:
   using: composite
   steps:
+    - name: Verify Maven credentials
+      shell: bash
+      env:
+        MAVEN_REPO_USERNAME: ${{ inputs.maven_repo_username }}
+        MAVEN_REPO_API_KEY: ${{ inputs.maven_repo_api_key }}
+      run: |
+        if [ -z "$MAVEN_REPO_USERNAME" ] || [ -z "$MAVEN_REPO_API_KEY" ]; then
+          echo "::error::Deploying needs both MAVEN_REPO_USERNAME and MAVEN_REPO_API_KEY. Pass them, or set deploy_snapshots: false to build without deploying."
+          exit 1
+        fi
+
     - name: Set up Java ${{ inputs.java_version }}
       uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
       with:
@@ -40,4 +55,12 @@ runs:
       env:
         MAVEN_REPO_USERNAME: ${{ inputs.maven_repo_username }}
         MAVEN_REPO_API_KEY: ${{ inputs.maven_repo_api_key }}
-      run: mvn --batch-mode deploy -DskipTests
+        SERVER_ID: ${{ inputs.server_id }}
+        REPOSITORY_URL: ${{ inputs.repository_url }}
+      run: |
+        ARGS=(--batch-mode deploy -DskipTests)
+        # id::default::url is the alternate-repository syntax both deploy plugin 2.8.x and 3.x accept.
+        if [ -n "$REPOSITORY_URL" ]; then
+          ARGS+=("-DaltSnapshotDeploymentRepository=$SERVER_ID::default::$REPOSITORY_URL")
+        fi
+        mvn "${ARGS[@]}"

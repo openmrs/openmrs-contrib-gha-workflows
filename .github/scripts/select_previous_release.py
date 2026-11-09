@@ -19,11 +19,13 @@ Writes `base_ref=<tag>` to GITHUB_OUTPUT. The value is empty when no
 suitable previous release exists (e.g. an artifact's first release), which
 lets the action fall back to its default behavior. Pre-release tags
 (anything carrying a semver pre-release suffix such as -alpha/-beta/-rc)
-are never selected as a base.
+are never selected as a base. RELEASE_VERSION may itself be a pre-release;
+its base is then the latest stable release older than its core version
+(1.0.1-alpha diffs against the latest stable release before 1.0.1).
 
-Also writes `is_latest=true|false`: whether no stable release newer than
-RELEASE_VERSION exists, i.e. whether its GitHub Release should be marked
-Latest.
+Also writes `is_latest=true|false`: whether its GitHub Release should be
+marked Latest, i.e. RELEASE_VERSION is stable and no stable release newer
+than it exists; and `prerelease=true|false`.
 """
 
 import os
@@ -49,19 +51,16 @@ VERSION_RE = re.compile(
 
 
 def parse_release_version(version):
-    """Parse the release version into a (major, minor, patch) ordering key.
-
-    The caller validates this is stable semver upstream; here we only need
-    its numeric ordering key and reject anything non-stable defensively.
-    """
+    """Return ((major, minor, patch), is_prerelease) for a semver release version."""
     match = VERSION_RE.match(version.strip())
-    if not match or match.group("prerelease"):
-        sys.exit(f"::error::Release version '{version}' is not stable semver")
-    return (
+    if not match:
+        sys.exit(f"::error::Release version '{version}' is not semver")
+    core = (
         int(match.group("major")),
         int(match.group("minor")),
         int(match.group("patch")),
     )
+    return core, bool(match.group("prerelease"))
 
 
 def stable_releases(tags, prefix):
@@ -85,17 +84,19 @@ def select_previous(tags, prefix, release_version):
     """Return the previous release tag, or None.
 
     Among `tags` sharing `prefix` whose remainder is a stable semver version
-    strictly less than `release_version`, returns the one with the greatest
+    strictly less than `release_version`'s core version, returns the one with the greatest
     version. Pre-release and non-version tags are ignored.
     """
-    target = parse_release_version(release_version)
+    target, _ = parse_release_version(release_version)
     older = [(v, tag) for v, tag in stable_releases(tags, prefix) if v < target]
     return max(older)[1] if older else None
 
 
 def is_newest(tags, prefix, release_version):
-    """True if no stable release in `tags` is newer than `release_version`."""
-    target = parse_release_version(release_version)
+    """True if `release_version` is stable and no stable release in `tags` is newer."""
+    target, prerelease = parse_release_version(release_version)
+    if prerelease:
+        return False
     return all(v <= target for v, _ in stable_releases(tags, prefix))
 
 
@@ -109,6 +110,7 @@ def main():
     write_github_outputs({
         "base_ref": base_ref or "",
         "is_latest": str(is_newest(tags, prefix, release_version)).lower(),
+        "prerelease": str(parse_release_version(release_version)[1]).lower(),
     })
 
 

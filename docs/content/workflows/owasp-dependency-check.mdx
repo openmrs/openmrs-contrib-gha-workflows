@@ -1,0 +1,100 @@
+---
+title: OWASP Dependency-Check
+description: Scan a Maven or Node.js project's dependencies for known vulnerabilities with OWASP Dependency-Check.
+---
+
+import { Callout } from 'nextra/components'
+
+# OWASP Dependency-Check
+
+`owasp-dependency-check.yml` runs [OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) against
+a Maven or Node.js project, fails the run when a vulnerability meets the CVSS threshold, and uploads the report as an
+artifact. In the `openmrs` org it also syncs the JSON report to the
+[vulnerability dashboard](https://github.com/openmrs/openmrs-contrib-dependency-vulnerability-dashboard).
+
+## Usage
+
+```yaml filename=".github/workflows/owasp.yml"
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+jobs:
+  dependency-check:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/owasp-dependency-check.yml@main
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      APP_ID: ${{ secrets.OMRS_SEC_DASHBOARD_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.OMRS_SEC_DASHBOARD_APP_PRIVATE_KEY }}
+```
+
+## What it does
+
+1. Detects the project type: `pom.xml` at the repository root means Maven, otherwise `package.json` means Node.js.
+   Anything else fails.
+2. Sets up Java (version inferred from the Maven compiler settings, defaulting to 8) or Node.js (from `engines.node`,
+   defaulting to 22). For Maven, builds the project with `maven_args` (`clean install -DskipTests` by default).
+3. Runs Dependency-Check with `--failOnCVSS <fail_on_cvss>` (default `6.2`), the suppression file, and
+   `additional_args` (default `--enableRetired`). Node.js projects exclude `packages/**`. An `NVD_API_KEY` speeds up
+   the vulnerability database download; it is not available to pull requests from forks.
+4. Uploads the report as the `Dependency Check report` artifact, even when the scan fails.
+5. On a push or manual run in the `openmrs` org, commits the JSON report to the dashboard repository.
+
+## Suppressions
+
+If the repository has a file at `suppression_file` (default `dependency-check-suppressions.xml` at the root), the scan
+uses it. Otherwise it uses the
+[shared suppressions file](https://github.com/openmrs/openmrs-contrib-gha-workflows/blob/main/.github/resources/owasp/dependency-check-suppressions.xml)
+from this repository. A repository's own file replaces the shared one; the two are not merged.
+
+The shared file applies to every repository that relies on it, so only add a suppression once it is confirmed to be a
+false positive.
+
+- Every `<suppress>` block needs a `<notes>` entry describing the CVE and why it is suppressed.
+- **OpenMRS CVEs are suppressed by CVE ID, not by package.** Many OpenMRS CVEs are matched against module JARs because
+  of the shared `openmrs` namespace, even though the vulnerable code is in `openmrs-core`, the Reference Application or
+  another module. Suppressing by CVE ID, after review, never silences a CVE that genuinely affects one of the project's
+  OpenMRS dependencies.
+- Non-OpenMRS packages can be suppressed more broadly (by package name, namespace and so on) where appropriate.
+- When scanning an artifact that **is** the affected component (for example the `dataexchange` or
+  `reportingcompatibility` module), check that the version is patched before suppressing.
+
+To handle a new OpenMRS CVE in a report:
+
+1. Read the CVE details: the affected component (e.g. `openmrs-core`, a specific module, the standalone distribution)
+   and the vulnerable version range.
+2. Decide whether it is a false positive: it is if the vulnerable code does not ship with this project's artifacts.
+3. If it is, add a suppression by CVE ID with a note explaining why it does not apply, following the existing format.
+4. If in doubt, treat it as real until proven otherwise.
+
+See the Dependency-Check [suppression documentation](https://dependency-check.github.io/DependencyCheck/general/suppression.html)
+for the file format.
+
+## OpenMRS defaults
+
+OpenMRS repositories use the shared suppressions file, pass the `NVD_API_KEY` org secret, and pass the
+`OMRS_SEC_DASHBOARD` App credentials as `APP_ID` / `APP_PRIVATE_KEY` so reports reach the dashboard.
+
+## Outside OpenMRS
+
+<Callout type="info">
+This workflow is for repositories in the OpenMRS organization: it feeds OpenMRS's public vulnerability dashboard, and
+its shared suppressions are reviewed against OpenMRS's own dependencies. It is not supported for use elsewhere; run
+[OWASP Dependency-Check](https://dependency-check.github.io/DependencyCheck/) directly instead.
+</Callout>
+
+## Permissions
+
+The scan job requests `contents: read`. The dashboard sync uses the App token or `BOT_GH_TOKEN` to write to the
+dashboard repository, not the calling repository's token.
+
+## Inputs
+
+<WorkflowReference id="workflows/owasp-dependency-check" section="inputs" />
+
+## Secrets
+
+<WorkflowReference id="workflows/owasp-dependency-check" section="secrets" />

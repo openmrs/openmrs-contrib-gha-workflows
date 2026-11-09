@@ -66,7 +66,7 @@ def write_github_outputs(outputs):
         print("\n".join(entries))
 
 
-def yarn_workspaces(extra_args=(), cwd=None):
+def yarn_workspaces(extra_args=(), cwd=None, strict=False):
     """Return yarn's workspace list as [{"location": ..., "name": ...}].
 
     Yarn is the authority on which workspaces exist, rather than globbing the
@@ -75,7 +75,7 @@ def yarn_workspaces(extra_args=(), cwd=None):
     ("--no-private",) to drop workspaces marked private.
 
     Returns [] if yarn is unavailable or fails, so callers can degrade rather
-    than abort.
+    than abort, or None with `strict`, for callers that must not guess.
     """
     try:
         result = subprocess.run(
@@ -87,7 +87,7 @@ def yarn_workspaces(extra_args=(), cwd=None):
         )
     except (OSError, subprocess.CalledProcessError) as e:
         print(f"::warning::Could not list yarn workspaces: {e}", file=sys.stderr)
-        return []
+        return None if strict else []
 
     workspaces = []
     for line in result.stdout.splitlines():
@@ -101,6 +101,8 @@ def yarn_workspaces(extra_args=(), cwd=None):
                 f"::warning::Skipping unparseable workspace entry: {line}",
                 file=sys.stderr,
             )
+            if strict:
+                return None
     return workspaces
 
 
@@ -118,7 +120,83 @@ def publishable_package_names(workspaces):
     return [w["name"] for w in workspaces if w.get("name")]
 
 
-def npm_version_state(package, version, token=None):
+def yarn_registry_config(cwd=None):
+    """Return the Yarn settings that decide where packages publish.
+
+    Values reflect `.yarnrc.yml` and `YARN_*` environment overrides. Unset
+    settings come back as None (Yarn 4 prints `undefined` for them). Returns
+    None if yarn is unavailable or fails, since guessing the registry would be
+    worse than admitting it is unknown.
+    """
+    config = {}
+    for key in ("npmPublishRegistry", "npmRegistryServer", "npmScopes"):
+        try:
+            result = subprocess.run(
+                ["yarn", "config", "get", key, "--json"],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=cwd,
+            )
+            output = result.stdout.strip()
+            config[key] = None if output in ("", "undefined") else json.loads(output)
+        except (OSError, subprocess.CalledProcessError, ValueError) as e:
+            print(f"::warning::Could not read yarn config {key}: {e}", file=sys.stderr)
+            return None
+    return config
+
+
+def publish_registry(manifest, config):
+    """The registry Yarn publishes `manifest` to, mirroring its own precedence.
+
+    `publishConfig.registry`, then the package scope's `npmPublishRegistry`,
+    then the top-level `npmPublishRegistry`, then `npmRegistryServer`. Returns
+    None when that depends on Yarn config that could not be read (`config` None).
+    """
+    registry = (manifest.get("publishConfig") or {}).get("registry")
+    if not registry and config is None:
+        return None
+    name = manifest.get("name", "")
+    if not registry and name.startswith("@"):
+        scope = name[1:].split("/", 1)[0]
+        registry = ((config.get("npmScopes") or {}).get(scope) or {}).get("npmPublishRegistry")
+    registry = registry or config.get("npmPublishRegistry") or config.get("npmRegistryServer") or NPM_REGISTRY
+    return registry.rstrip("/")
+
+
+def publishable_packages(cwd=None):
+    """Return [{"name", "version", "registry"}] for the packages a publish would push.
+
+    Each package is reported at its own version, which may differ between
+    workspaces, and with the registry Yarn would publish it to, or None if that
+    could not be determined. Returns None if the packages themselves could not
+    be listed.
+    """
+    config = yarn_registry_config(cwd)
+    workspaces = yarn_workspaces(("--no-private",), cwd, strict=True)
+    if workspaces is None:
+        return None
+    names = set(publishable_package_names(workspaces))
+    packages = []
+    for workspace in workspaces:
+        if workspace.get("name") not in names:
+            continue
+        path = os.path.join(cwd or ".", workspace["location"], "package.json")
+        try:
+            with open(path) as f:
+                manifest = json.load(f)
+        except (OSError, ValueError) as e:
+            print(f"::warning::Could not read {path}: {e}", file=sys.stderr)
+            return None
+        packages.append({
+            "name": workspace["name"],
+            "version": manifest.get("version", ""),
+            "registry": publish_registry(manifest, config),
+        })
+    return packages
+
+
+def npm_version_state(package, version, token=None, registry=NPM_REGISTRY):
     """Return "live", "missing" or "unknown" for `package@version` on npm.
 
     Queries the registry's per-version endpoint, which is served uncached, rather
@@ -126,9 +204,9 @@ def npm_version_state(package, version, token=None):
     lag a fresh publish by minutes. "missing" requires a definite 404; any other
     failure (network, auth, rate limiting) is "unknown", so callers never mistake
     an unreachable registry for an absent version. Pass `token` to see
-    restricted packages.
+    restricted packages, and `registry` to query a registry other than npmjs.
     """
-    url = f"{NPM_REGISTRY}/{urllib.parse.quote(package, safe='@')}/{urllib.parse.quote(version)}"
+    url = f"{registry.rstrip('/')}/{urllib.parse.quote(package, safe='@')}/{urllib.parse.quote(version)}"
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
     if token:
         request.add_header("Authorization", f"Bearer {token}")

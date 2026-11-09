@@ -1,0 +1,8 @@
+{
+  "name": "gha-workflows-tools",
+  "private": true,
+  "description": "Node.js packages the workflows run themselves, independent of the calling repository's dependencies",
+  "dependencies": {
+    "semver": "7.8.5"
+  }
+}

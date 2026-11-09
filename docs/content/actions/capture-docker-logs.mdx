@@ -1,0 +1,41 @@
+---
+title: Capture Docker logs
+description: Write the logs of every Docker container on the runner to files.
+---
+
+# Capture Docker logs
+
+The `capture-docker-logs` action writes the logs of every Docker container on the runner, running or stopped, to
+`<dest>/<container name>.log`. It is meant for end-to-end test jobs that start a Docker stack and upload its logs when
+tests fail.
+
+## Usage
+
+Set the step's `if:` to match when you want the logs, and upload the directory afterwards:
+
+```yaml
+- name: Capture server logs
+  if: always()
+  uses: openmrs/openmrs-contrib-gha-workflows/.github/actions/capture-docker-logs@main
+  with:
+    dest: logs
+
+- name: Upload logs as artifact
+  if: always()
+  uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+  with:
+    name: server-logs
+    path: logs
+```
+
+## What it does
+
+1. Creates `dest` if it does not exist.
+2. Lists every container, running or stopped, and writes each one's logs to `<dest>/<container name>.log`.
+
+If one container's logs cannot be read, the action skips it with a warning. It fails only if it cannot list the
+containers.
+
+## Inputs
+
+<WorkflowReference id="actions/capture-docker-logs" section="inputs" />

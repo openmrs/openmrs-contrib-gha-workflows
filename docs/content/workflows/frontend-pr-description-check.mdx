@@ -1,0 +1,81 @@
+---
+title: Frontend PR description check
+description: Require pull request descriptions to use the OpenMRS O3 pull request template.
+---
+
+import { Callout } from 'nextra/components'
+
+# Frontend PR description check
+
+`frontend-pr-description-check.yml` fails when a pull request description does not follow the O3 pull request
+template.
+
+<Callout type="info">
+This check encodes OpenMRS conventions and is opt-in. It expects the O3 pull request template's headings and
+checklist.
+</Callout>
+
+## Usage
+
+```yaml filename=".github/workflows/pr-description-check.yml"
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  pr-description:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/frontend-pr-description-check.yml@main
+    with:
+      pr-body: ${{ github.event.pull_request.body }}
+      pr-author-login: ${{ github.event.pull_request.user.login }}
+      pr-author-type: ${{ github.event.pull_request.user.type }}
+```
+
+## What it does
+
+Descriptions from bot authors (type `Bot`, or a login ending in `[bot]` or `-bot`) are not checked. Otherwise the
+description must meet every rule:
+
+| Rule | Detail |
+| --- | --- |
+| Not empty | An empty description fails. |
+| Required headings | Markdown headings (any level) named `Requirements`, `Summary`, `Screenshots`, `Related Issue` and `Other`. |
+| First checkbox checked | The first `- [ ]` checkbox in the description must be checked (`- [x]`). In the template it is the first Requirements item. |
+| Summary has content | The `Summary` section must contain text other than blank lines and HTML comments, so the template's placeholder comment does not count. |
+
+A description that passes:
+
+```markdown
+## Requirements
+
+- [x] This PR has a title that briefly describes the work done.
+
+## Summary
+
+Fixes the date format in the run report.
+
+## Screenshots
+
+## Related Issue
+
+https://openmrs.atlassian.net/browse/O3-4522
+
+## Other
+```
+
+## OpenMRS defaults
+
+O3 repositories run this check on every pull request, alongside the [PR title check](/workflows/frontend-pr-title-check).
+
+## Outside OpenMRS
+
+The headings are fixed. Use the check only if your pull request template has the same five sections and a checklist
+whose first item authors must tick.
+
+## Permissions
+
+The job needs no permissions; it only reads its inputs.
+
+## Inputs
+
+<WorkflowReference id="workflows/frontend-pr-description-check" section="inputs" />

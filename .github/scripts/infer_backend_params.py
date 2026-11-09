@@ -6,8 +6,9 @@ Reads the effective POM produced by `mvn help:effective-pom -Doutput=...`
 
 - Java versions to build against (from OpenMRS platform dependency mapping)
 - Main Java version (from Maven compiler settings)
-- Maven server IDs for release and snapshot deployment
-- POM project version
+- Maven server IDs and URLs for release and snapshot deployment
+- POM project version, module groupIds and SCM connections
+- whether the build publishes with central-publishing-maven-plugin
 
 Writes results as GitHub Actions step outputs.
 """
@@ -226,19 +227,72 @@ def map_range_to_java(range_str):
 # ---------------------------------------------------------------------------
 
 
-def find_server_ids(project):
-    """Extract repository and snapshotRepository server IDs from distributionManagement."""
-    release_id = None
-    snapshot_id = None
+def _deploy_repositories(project):
+    """Return the release and SNAPSHOT <repository>-style elements from distributionManagement.
+
+    Like Maven, SNAPSHOTs deploy to <repository> when there is no <snapshotRepository>.
+    """
     dm = project.find("distributionManagement")
-    if dm is not None:
-        repo = dm.find("repository/id")
-        if repo is not None and repo.text:
-            release_id = repo.text.strip()
-        snap = dm.find("snapshotRepository/id")
-        if snap is not None and snap.text:
-            snapshot_id = snap.text.strip()
-    return release_id, snapshot_id
+    if dm is None:
+        return None, None
+    release = dm.find("repository")
+    snapshot = dm.find("snapshotRepository")
+    return release, snapshot if snapshot is not None else release
+
+
+def _child_text(element, tag):
+    if element is None:
+        return None
+    return (element.findtext(tag) or "").strip() or None
+
+
+def find_server_ids(project):
+    """Return the release and SNAPSHOT deploy server IDs from distributionManagement."""
+    release, snapshot = _deploy_repositories(project)
+    return _child_text(release, "id"), _child_text(snapshot, "id")
+
+
+def find_repository_urls(project):
+    """Return the release and SNAPSHOT deploy URLs from distributionManagement."""
+    release, snapshot = _deploy_repositories(project)
+    return _child_text(release, "url"), _child_text(snapshot, "url")
+
+
+def find_group_ids(projects):
+    """Return the sorted, distinct groupIds of every module in the build."""
+    group_ids = set()
+    for project in projects:
+        gid = (project.findtext("groupId") or project.findtext("parent/groupId") or "").strip()
+        if gid:
+            group_ids.add(gid)
+    return sorted(group_ids)
+
+
+def find_scm_connections(project):
+    """Return the distinct <scm> developerConnection and connection values, in that order."""
+    connections = []
+    for path in ("scm/developerConnection", "scm/connection"):
+        value = (project.findtext(path) or "").strip()
+        if value and value not in connections:
+            connections.append(value)
+    return connections
+
+
+def uses_central_publishing(projects):
+    """True if any module's build configures central-publishing-maven-plugin.
+
+    Only the effective build counts: profiles that are active are already merged
+    into it, and inactive ones cannot publish. pluginManagement is ignored, since
+    declaring the plugin there does not use it.
+    """
+    for project in projects:
+        plugins = project.find("build/plugins")
+        if plugins is None:
+            continue
+        for plugin in plugins.findall("plugin"):
+            if (plugin.findtext("artifactId") or "").strip() == "central-publishing-maven-plugin":
+                return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +346,24 @@ def find_release_tag_format(project):
     return None
 
 
+def find_release_plugin_version(project):
+    """Return the maven-release-plugin version in the effective POM, or None.
+
+    Maven's super POM pins a version of its own (2.5.3 before Maven 3.9, 3.0.1
+    since), so a version here does not mean the project chose it.
+    """
+    for path in ("build/plugins", "build/pluginManagement/plugins"):
+        plugins = project.find(path)
+        if plugins is None:
+            continue
+        for plugin in plugins.findall("plugin"):
+            if plugin.findtext("artifactId", "") == "maven-release-plugin":
+                version = (plugin.findtext("version") or "").strip()
+                if version:
+                    return version
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -327,6 +399,7 @@ def main():
     # Server IDs, project coordinates, and release tag format come from the
     # aggregator (first project).
     release_id, snapshot_id = find_server_ids(primary)
+    release_url, snapshot_url = find_repository_urls(primary)
     project_version = find_project_version(primary)
     project_artifact_id = find_artifact_id(primary)
     release_tag_format = find_release_tag_format(primary) or DEFAULT_RELEASE_TAG_FORMAT
@@ -339,9 +412,15 @@ def main():
             "main_java_version": main_java,
             "release_server_id": release_id,
             "snapshot_server_id": snapshot_id,
+            "release_repository_url": release_url,
+            "snapshot_repository_url": snapshot_url,
+            "group_ids": json.dumps(find_group_ids(projects)),
+            "scm_connections": json.dumps(find_scm_connections(primary)),
+            "central_publishing": str(uses_central_publishing(projects)).lower(),
             "project_version": project_version,
             "project_artifact_id": project_artifact_id,
             "release_tag_format": release_tag_format,
+            "release_plugin_version": find_release_plugin_version(primary),
         }
     )
 

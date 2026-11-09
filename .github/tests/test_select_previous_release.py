@@ -78,9 +78,17 @@ class TestSelectPrevious(unittest.TestCase):
         tags = ["", "  ", "foo-1.2.0", "foo-1.2", "foo-1.2.0.3"]
         self.assertEqual(spr.select_previous(tags, "foo-", "1.3.0"), "foo-1.2.0")
 
-    def test_rejects_prerelease_release_version(self):
+    def test_prerelease_target_diffs_against_stable_before_its_core(self):
+        tags = ["foo-1.0.0", "foo-1.0.1", "foo-1.1.0-alpha"]
+        self.assertEqual(spr.select_previous(tags, "foo-", "1.1.0-rc.1"), "foo-1.0.1")
+
+    def test_prerelease_target_ignores_its_own_stable_release(self):
+        tags = ["foo-1.0.0", "foo-1.0.1"]
+        self.assertEqual(spr.select_previous(tags, "foo-", "1.0.1-alpha"), "foo-1.0.0")
+
+    def test_rejects_non_semver_release_version(self):
         with self.assertRaises(SystemExit):
-            spr.select_previous(["foo-1.0.0"], "foo-", "1.1.0-rc.1")
+            spr.select_previous(["foo-1.0.0"], "foo-", "1.1")
 
 
 class TestIsNewest(unittest.TestCase):
@@ -99,6 +107,9 @@ class TestIsNewest(unittest.TestCase):
 
     def test_no_tags(self):
         self.assertTrue(spr.is_newest([], "foo-", "1.0.0"))
+
+    def test_prerelease_is_never_latest(self):
+        self.assertFalse(spr.is_newest(["foo-1.0.0"], "foo-", "2.0.0-beta.1"))
 
 
 class TestMain(unittest.TestCase):
@@ -128,6 +139,15 @@ class TestMain(unittest.TestCase):
     def test_writes_is_latest(self):
         self.assertIn("is_latest=false", self._run(["foo-2.5.3", "foo-3.0.0"]))
         self.assertIn("is_latest=true", self._run(["foo-2.5.3"]))
+
+    def test_writes_prerelease_flag(self):
+        self.assertIn("prerelease=false", self._run(["foo-2.5.3"]))
+        os.environ["TAG_PREFIX"] = "foo-"
+        os.environ["RELEASE_VERSION"] = "2.6.0-rc.1"
+        with patch("sys.stdin", io.StringIO("foo-2.5.3")):
+            spr.main()
+        with open(self.out_path) as f:
+            self.assertIn("prerelease=true", f.read())
 
     def test_writes_empty_base_ref_when_none(self):
         self.assertIn("base_ref=", self._run(["bar-1.0.0"]))

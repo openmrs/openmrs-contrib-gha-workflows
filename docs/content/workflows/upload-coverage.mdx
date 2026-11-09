@@ -1,0 +1,81 @@
+---
+title: Upload coverage
+description: Upload JaCoCo coverage staged by the Maven build workflows to Codecov, including for pull requests from forks.
+---
+
+import { Callout } from 'nextra/components'
+
+# Upload coverage
+
+`upload-coverage.yml` uploads the JaCoCo reports that [Build Maven project](/workflows/build-maven) and
+[Build backend module](/workflows/build-backend-module) stage as a `coverage-reports` artifact, sending them to Codecov after
+the build finishes.
+
+## Why a separate workflow
+
+A build triggered by a pull request from a fork has no access to secrets or an OIDC token, so a direct Codecov upload
+from that build always fails with `Token required - not valid tokenless upload`. The build workflows therefore only
+stage the reports. This workflow runs from a `workflow_run` trigger **after** the build completes, in the base
+repository's trusted context, where OIDC is available, and uploads on the fork's behalf.
+
+The commit, branch and pull request reported to Codecov all come from trusted sources: the `workflow_run` event and the
+base repository's API. The fork-controlled artifact supplies only the JaCoCo reports. A fork's branch is reported as
+`owner:branch`, so it can never be attributed to a base-repository branch, and the pull request is looked up from the
+head commit, since the `workflow_run` payload has none for fork pull requests.
+
+## Usage
+
+A `workflow_run` trigger only fires for workflows defined on the repository's default branch, so it cannot live in
+this repository. Each repository needs a small stub that connects its build workflow to the shared upload:
+
+```yaml filename=".github/workflows/upload-coverage.yml"
+name: Upload Coverage
+
+on:
+  workflow_run:
+    workflows: ["Build with Maven"]  # must match the `name:` of the repo's build workflow
+    types: [completed]
+
+jobs:
+  upload:
+    # The upload workflow requires these; declare them so it works regardless of
+    # the repo's default token permissions.
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      pull-requests: read
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/upload-coverage.yml@main
+```
+
+## What it does
+
+1. Downloads the `coverage-reports` artifact from the build run that triggered it. If there is none (coverage was not
+   staged, or the build failed before staging), it logs a warning and stops.
+2. Resolves the commit, branch and pull request from the `workflow_run` event and the API.
+3. Uploads the reports to Codecov with OIDC authentication. An upload error fails the job.
+
+Coverage is staged only on the build's main Java version, and only when `jacoco.xml` reports exist. Set
+`upload_coverage: "false"` on the build workflow to stop staging.
+
+## OpenMRS defaults
+
+Add the stub above and keep the build workflow named `Build with Maven`. No secrets are needed: uploads authenticate
+with OIDC.
+
+## Outside OpenMRS
+
+<Callout type="info">
+Your organization or repository must be set up in Codecov for OIDC uploads. Without it, the upload fails.
+</Callout>
+
+The workflow only runs where a caller stub invokes it. A repository that inherits the stub, such as a fork of an
+OpenMRS module, uploads to its own Codecov project, never its upstream's, and fails if it has none; remove the stub to
+stop uploading.
+
+## Permissions
+
+The calling job must grant `contents: read`, `actions: read` (to download the artifact from another run),
+`id-token: write` (for Codecov OIDC) and `pull-requests: read`, as in the stub above.
+
+This workflow has no inputs or secrets.
