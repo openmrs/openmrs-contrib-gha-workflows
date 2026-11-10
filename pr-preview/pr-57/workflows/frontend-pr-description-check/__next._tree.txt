@@ -1,4 +1,4 @@
 :HL["/pr-preview/pr-57/_next/static/chunks/3zzxpdhjfu-6c.css","style"]
 2:[["children",{"s":"__PAGE__","h":160}]]
 1:[["children",{"s":{"n":"mdxPath","t":"oc","k":"workflows/frontend-pr-description-check","s":[]},"h":64,"c":"$Q2"}]]
-0:{"b":"vzMs_apJI8TTK-iVbkgfn","t":{"t":{"s":"","h":16,"c":"$Q1"}}}
+0:{"b":"VZsB6PI_wQrWkRM2xDGKc","t":{"t":{"s":"","h":16,"c":"$Q1"}}}
