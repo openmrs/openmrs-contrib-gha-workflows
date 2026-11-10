@@ -57,7 +57,10 @@ class TestDocumentState(unittest.TestCase):
     def test_reads_the_document_for_the_accept_it_is_given(self):
         self.fetch({"versions": {}})
         self.assertEqual(self.request.full_url, "https://registry.npmjs.org/@o%2Fa")
-        self.assertEqual(self.request.get_header("Accept"), waiter.INSTALL_ACCEPT)
+        self.assertEqual(
+            self.request.get_header("Accept"),
+            "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*",
+        )
         self.assertEqual(self.request.get_header("Accept-encoding"), "gzip")
 
     def test_reads_a_gzipped_document(self):
@@ -140,6 +143,19 @@ class TestWait(unittest.TestCase):
 
         missing = waiter.wait(packages or [pkg(n) for n in states], timeout, 10, state, clock.sleep, clock)
         return missing, calls, clock.now
+
+    def test_stops_at_the_deadline_rather_than_finishing_a_slow_sweep(self):
+        clock = FakeClock()
+
+        def slow_state(name, version, registry):
+            clock.now += 20
+            return waiter.NOT_LISTED
+
+        packages = [pkg("@o/a"), pkg("@o/b"), pkg("@o/c")]
+        missing = waiter.wait(packages, 70, 10, slow_state, clock.sleep, clock)
+
+        self.assertEqual(set(missing), {"@o/a@1.0.1-pre.7", "@o/b@1.0.1-pre.7", "@o/c@1.0.1-pre.7"})
+        self.assertEqual(clock.now, 70)
 
     def test_returns_straight_away_when_everything_is_listed(self):
         missing, _, elapsed = self.run_wait({"@o/a": [waiter.LISTED], "@o/b": [waiter.LISTED]})

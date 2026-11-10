@@ -283,8 +283,8 @@ for up to 15 minutes. npm's CDN caches package documents for up to five minutes,
 the publish could still resolve the previous version of `next`. The CDN caches the abbreviated package document, which
 `openmrs assemble` and npx's resolution of `next` read, separately from the full one, which npm's installer reads, so
 the wait checks that both list the new version. If a package is still missing after 15 minutes, the job fails, naming
-the document that is behind, and nothing is dispatched. A registry that needs credentials to read a package is not waited on, and the job logs a
-warning instead.
+the document that is behind, and nothing is dispatched. A registry that needs credentials to read a package is not
+waited on, and the job logs a warning instead.
 
 ## GitHub App or PAT
 

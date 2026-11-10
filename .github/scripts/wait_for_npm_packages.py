@@ -107,6 +107,9 @@ def wait(packages, timeout=TIMEOUT, interval=INTERVAL, state=listed_state, sleep
     last = {}
     while True:
         for key, package in list(pending.items()):
+            # Stop mid-sweep at the deadline, so slow requests cannot run into the step's own timeout.
+            if key in last and clock() >= deadline:
+                break
             last[key] = state(package["name"], package["version"], package["registry"])
             if last[key] == LISTED:
                 print(f"✅ {key} is served by {package['registry']}")
