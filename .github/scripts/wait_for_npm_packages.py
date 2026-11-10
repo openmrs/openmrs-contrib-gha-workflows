@@ -2,10 +2,12 @@
 """Record the packages a pre-release published, then wait until npm serves them.
 
 A downstream build resolves `next` through `pacote`, which reads the abbreviated
-package document. The registry's CDN caches that document for up to five minutes,
-so a build dispatched straight after a publish can still resolve the previous
-version. Waiting on the per-version endpoint would not help: it is served
-uncached and answers as soon as the publish lands.
+package document, and npm's installer then reads the full one. The registry's CDN
+caches each document separately for up to five minutes, so a build dispatched
+straight after a publish can resolve the previous version, or resolve the new one
+and then fail to install it.
+Waiting on the per-version endpoint would not help: it is served uncached and
+answers as soon as the publish lands.
 
 `record` runs after the pre-release version is set and writes the `packages`
 output. `wait` takes that output as PACKAGES, a JSON array of {name, version,
@@ -13,6 +15,7 @@ registry}, and polls every INTERVAL seconds for up to TIMEOUT.
 """
 
 import gzip
+import http.client
 import json
 import os
 import sys
@@ -25,8 +28,10 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import publishable_packages, write_github_outputs
 
-# The Accept header pacote sends; the CDN caches each Accept variant separately.
+# The Accept headers pacote sends; the CDN caches each Accept variant separately.
 INSTALL_ACCEPT = "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*"
+FULL_ACCEPT = "application/json"
+DOCUMENTS = (("abbreviated", INSTALL_ACCEPT), ("full", FULL_ACCEPT))
 
 TIMEOUT = 900
 INTERVAL = 10
@@ -35,9 +40,20 @@ LISTED, NOT_LISTED, NO_ACCESS, UNREACHABLE = "listed", "not listed", "no access"
 
 
 def listed_state(package, version, registry):
-    """Whether the cached abbreviated document for `package` lists `version`."""
+    """LISTED once both cached documents for `package` list `version`, else the first one's shortfall."""
+    for name, accept in DOCUMENTS:
+        state = document_state(package, version, registry, accept)
+        if state == NO_ACCESS:
+            return state
+        if state != LISTED:
+            return f"{name} document {state}"
+    return LISTED
+
+
+def document_state(package, version, registry, accept):
+    """Whether the cached document for `package` sent for `accept` lists `version`."""
     url = f"{registry.rstrip('/')}/{urllib.parse.quote(package, safe='@')}"
-    request = urllib.request.Request(url, headers={"Accept": INSTALL_ACCEPT, "Accept-Encoding": "gzip"})
+    request = urllib.request.Request(url, headers={"Accept": accept, "Accept-Encoding": "gzip"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             body = response.read()
@@ -48,7 +64,7 @@ def listed_state(package, version, registry):
         if e.code == 404:
             return NOT_LISTED
         return NO_ACCESS if e.code in (401, 403) else UNREACHABLE
-    except (OSError, ValueError, EOFError, zlib.error):
+    except (OSError, ValueError, EOFError, zlib.error, http.client.HTTPException):
         return UNREACHABLE
     return LISTED if version in (document.get("versions") or {}) else NOT_LISTED
 

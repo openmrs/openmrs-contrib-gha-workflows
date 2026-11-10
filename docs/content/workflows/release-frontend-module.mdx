@@ -280,9 +280,10 @@ token needs `actions: write` on the downstream repository. Set `trigger_downstre
 
 The dispatch waits until the registry serves the new pre-release of every published package, polling every 10 seconds
 for up to 15 minutes. npm's CDN caches package documents for up to five minutes, so a build dispatched straight after
-the publish could still resolve the previous version of `next`. The wait checks the same abbreviated package document
-that `npm install` and `openmrs assemble` read. If a package is still missing after 15 minutes, the job fails and
-nothing is dispatched. A registry that needs credentials to read a package is not waited on, and the job logs a
+the publish could still resolve the previous version of `next`. The CDN caches the abbreviated package document, which
+`openmrs assemble` and npx's resolution of `next` read, separately from the full one, which npm's installer reads, so
+the wait checks that both list the new version. If a package is still missing after 15 minutes, the job fails, naming
+the document that is behind, and nothing is dispatched. A registry that needs credentials to read a package is not waited on, and the job logs a
 warning instead.
 
 ## GitHub App or PAT

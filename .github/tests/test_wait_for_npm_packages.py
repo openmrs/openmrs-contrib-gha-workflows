@@ -2,6 +2,7 @@
 """Tests for wait_for_npm_packages.py."""
 
 import gzip
+import http.client
 import io
 import json
 import os
@@ -38,7 +39,7 @@ class FakeClock:
         self.now += seconds
 
 
-class TestListedState(unittest.TestCase):
+class TestDocumentState(unittest.TestCase):
     def fetch(self, response=None, error=None, gzipped=False):
         def urlopen(request, timeout):
             self.request = request
@@ -48,12 +49,12 @@ class TestListedState(unittest.TestCase):
             return FakeResponse(gzip.compress(body), "gzip") if gzipped else FakeResponse(body)
 
         with patch.object(waiter.urllib.request, "urlopen", urlopen):
-            return waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS + "/")
+            return waiter.document_state("@o/a", "1.0.1-pre.7", NPMJS + "/", waiter.INSTALL_ACCEPT)
 
     def http_error(self, code):
         return urllib.error.HTTPError(NPMJS, code, "", {}, None)
 
-    def test_reads_the_abbreviated_document_pacote_reads(self):
+    def test_reads_the_document_for_the_accept_it_is_given(self):
         self.fetch({"versions": {}})
         self.assertEqual(self.request.full_url, "https://registry.npmjs.org/@o%2Fa")
         self.assertEqual(self.request.get_header("Accept"), waiter.INSTALL_ACCEPT)
@@ -79,12 +80,53 @@ class TestListedState(unittest.TestCase):
     def test_unreachable_on_server_errors_and_bad_json(self):
         self.assertEqual(self.fetch(error=self.http_error(503)), waiter.UNREACHABLE)
         self.assertEqual(self.fetch(error=OSError("reset")), waiter.UNREACHABLE)
+        self.assertEqual(self.fetch(error=http.client.BadStatusLine("")), waiter.UNREACHABLE)
         for body in (FakeResponse(b"<html>"), FakeResponse(b"not gzip", "gzip"),
                      FakeResponse(gzip.compress(b"{}")[:-4], "gzip"),
                      FakeResponse(gzip.compress(b"{}")[:10] + b"\xff" * 20, "gzip")):
             with self.subTest(body=body.getvalue()), \
                     patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: body):
-                self.assertEqual(waiter.listed_state("@o/a", "1", NPMJS), waiter.UNREACHABLE)
+                self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT), waiter.UNREACHABLE)
+
+    def test_unreachable_when_the_body_is_cut_short(self):
+        class CutShort(FakeResponse):
+            def read(self, *args):
+                raise http.client.IncompleteRead(b'{"vers', 100)
+
+        with patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: CutShort(b"")):
+            self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT), waiter.UNREACHABLE)
+
+
+class TestListedState(unittest.TestCase):
+    def check(self, abbreviated, full):
+        accepts = []
+
+        def document_state(package, version, registry, accept):
+            accepts.append(accept)
+            return abbreviated if accept == waiter.INSTALL_ACCEPT else full
+
+        with patch.object(waiter, "document_state", document_state):
+            return waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), accepts
+
+    def test_reads_the_abbreviated_document_then_the_full_one_npm_installs_from(self):
+        self.assertEqual(self.check(waiter.LISTED, waiter.LISTED),
+                         (waiter.LISTED, [waiter.INSTALL_ACCEPT, "application/json"]))
+
+    def test_not_listed_until_the_full_document_has_it_too(self):
+        def urlopen(request, timeout):
+            full = request.get_header("Accept") == "application/json"
+            return FakeResponse(json.dumps({"versions": {} if full else {"1.0.1-pre.7": {}}}).encode())
+
+        with patch.object(waiter.urllib.request, "urlopen", urlopen):
+            self.assertEqual(waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), "full document not listed")
+
+    def test_names_the_document_that_is_behind(self):
+        self.assertEqual(self.check(waiter.NOT_LISTED, waiter.LISTED)[0], "abbreviated document not listed")
+        self.assertEqual(self.check(waiter.LISTED, waiter.UNREACHABLE)[0], "full document unreachable")
+
+    def test_no_access_to_either_document_is_not_waited_for(self):
+        self.assertEqual(self.check(waiter.NO_ACCESS, waiter.LISTED)[0], waiter.NO_ACCESS)
+        self.assertEqual(self.check(waiter.LISTED, waiter.NO_ACCESS)[0], waiter.NO_ACCESS)
 
 
 class TestWait(unittest.TestCase):
