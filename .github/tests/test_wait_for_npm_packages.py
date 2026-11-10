@@ -157,6 +157,22 @@ class TestWait(unittest.TestCase):
         self.assertEqual(set(missing), {"@o/a@1.0.1-pre.7", "@o/b@1.0.1-pre.7", "@o/c@1.0.1-pre.7"})
         self.assertEqual(clock.now, 70)
 
+    def test_stops_at_the_deadline_within_the_first_sweep_naming_what_went_unchecked(self):
+        clock = FakeClock()
+
+        def slow_state(name, version, registry):
+            clock.now += 60
+            return waiter.UNREACHABLE
+
+        packages = [pkg("@o/a"), pkg("@o/b"), pkg("@o/c")]
+        missing = waiter.wait(packages, 100, 10, slow_state, clock.sleep, clock)
+
+        self.assertEqual(
+            missing,
+            {"@o/a@1.0.1-pre.7": waiter.UNREACHABLE, "@o/b@1.0.1-pre.7": waiter.UNREACHABLE, "@o/c@1.0.1-pre.7": "not checked"},
+        )
+        self.assertEqual(clock.now, 120)
+
     def test_returns_straight_away_when_everything_is_listed(self):
         missing, _, elapsed = self.run_wait({"@o/a": [waiter.LISTED], "@o/b": [waiter.LISTED]})
         self.assertEqual(missing, {})
@@ -184,7 +200,7 @@ class TestWait(unittest.TestCase):
 
     def test_each_package_is_checked_at_its_own_version(self):
         seen = []
-        waiter.wait([pkg("@o/a", "1.0.0"), pkg("@o/b", "2.0.0")], 0, 10,
+        waiter.wait([pkg("@o/a", "1.0.0"), pkg("@o/b", "2.0.0")], 60, 10,
                     lambda n, v, r: seen.append((n, v)) or waiter.LISTED, lambda s: None, lambda: 0)
         self.assertEqual(seen, [("@o/a", "1.0.0"), ("@o/b", "2.0.0")])
 

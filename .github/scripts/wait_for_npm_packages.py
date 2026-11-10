@@ -37,6 +37,7 @@ TIMEOUT = 900
 INTERVAL = 10
 
 LISTED, NOT_LISTED, NO_ACCESS, UNREACHABLE = "listed", "not listed", "no access", "unreachable"
+NOT_CHECKED = "not checked"
 
 
 def listed_state(package, version, registry):
@@ -108,7 +109,7 @@ def wait(packages, timeout=TIMEOUT, interval=INTERVAL, state=listed_state, sleep
     while True:
         for key, package in list(pending.items()):
             # Stop mid-sweep at the deadline, so slow requests cannot run into the step's own timeout.
-            if key in last and clock() >= deadline:
+            if clock() >= deadline:
                 break
             last[key] = state(package["name"], package["version"], package["registry"])
             if last[key] == LISTED:
@@ -118,7 +119,7 @@ def wait(packages, timeout=TIMEOUT, interval=INTERVAL, state=listed_state, sleep
                 print(f"::warning::{package['registry']} needs credentials to read {package['name']}, so {key} is not waited for.")
                 del pending[key]
         if not pending or clock() >= deadline:
-            return {key: last[key] for key in pending}
+            return {key: last.get(key, NOT_CHECKED) for key in pending}
         print(f"Waiting for {', '.join(pending)} ...")
         sleep(interval)
 
