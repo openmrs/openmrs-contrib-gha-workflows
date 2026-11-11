@@ -342,7 +342,7 @@ jobs:
             | python3 .gha-workflows/.github/scripts/select_previous_release.py
 
       - name: Set up Java ${{ steps.java.outputs.version }}
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           java-version: ${{ steps.java.outputs.version }}
           distribution: ${{ inputs.java_distribution }}
@@ -497,7 +497,7 @@ jobs:
           base-ref: ${{ needs.release.outputs.base_ref && format('refs/tags/{0}', needs.release.outputs.base_ref) || '' }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.release.outputs.tag_name }}
           name: ${{ needs.release.outputs.release_version }}
