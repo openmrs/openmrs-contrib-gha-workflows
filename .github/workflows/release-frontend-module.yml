@@ -215,6 +215,8 @@ jobs:
     concurrency:
       group: pre-release-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: false
+    outputs:
+      packages: ${{ steps.packages.outputs.packages }}
 
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -314,6 +316,10 @@ jobs:
         env:
           PRERELEASE_VERSION: ${{ steps.version.outputs.version }}
 
+      - name: 📋 Record the packages to publish
+        id: packages
+        run: python3 .gha-workflows/.github/scripts/wait_for_npm_packages.py record
+
       - name: 🏗️ Run build
         run: ${{ steps.params.outputs.build_command }}
 
@@ -404,6 +410,22 @@ jobs:
         run: |
           echo "::error::Triggering the downstream build needs cross-repo credentials: set APP_ID + APP_PRIVATE_KEY (preferred) or BOT_PAT. github.token cannot dispatch to another repository."
           exit 1
+
+      - name: Checkout workflow scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          sparse-checkout: |
+            .github/scripts
+          sparse-checkout-cone-mode: false
+          path: .gha-workflows
+
+      - name: ⏳ Wait for npm to serve the pre-release
+        timeout-minutes: 20
+        env:
+          PACKAGES: ${{ needs.pre_release.outputs.packages }}
+        run: python3 .gha-workflows/.github/scripts/wait_for_npm_packages.py wait
 
       - name: 🔑 Generate GitHub App token
         id: app-token
