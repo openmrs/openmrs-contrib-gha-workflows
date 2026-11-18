@@ -163,7 +163,7 @@ jobs:
       - name: Review
         id: review
         if: steps.gate.outputs.allowed == 'true'
-        uses: anthropics/claude-code-action@61a9c274fa7110a66dfafc1bbbced03833eb25fe # v1.0.269
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         env:
           # The skill posts its review through `gh api .../reviews`; give gh the
           # workflow token so those calls are authenticated.
