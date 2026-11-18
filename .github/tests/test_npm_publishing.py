@@ -32,6 +32,12 @@ class TestPublishRegistry(unittest.TestCase):
         manifest = {"name": "@x/a", "publishConfig": {"registry": "https://p.example.org/"}}
         self.assertEqual(utils.publish_registry(manifest, self.CONFIG), "https://p.example.org")
 
+    def test_ignores_a_publish_config_yarn_ignores(self):
+        for publish_config in ("public", ["x"], True, {"registry": 123}):
+            with self.subTest(publish_config=publish_config):
+                manifest = {"name": "@x/a", "publishConfig": publish_config}
+                self.assertEqual(utils.publish_registry(manifest, self.CONFIG), "https://x.example.org")
+
     def test_scope_publish_registry(self):
         self.assertEqual(utils.publish_registry({"name": "@x/a"}, self.CONFIG), "https://x.example.org")
 

@@ -153,7 +153,11 @@ def publish_registry(manifest, config):
     then the top-level `npmPublishRegistry`, then `npmRegistryServer`. Returns
     None when that depends on Yarn config that could not be read (`config` None).
     """
-    registry = (manifest.get("publishConfig") or {}).get("registry")
+    # Yarn ignores a publishConfig that is not an object, and a registry that is not a string.
+    publish_config = manifest.get("publishConfig")
+    registry = publish_config.get("registry") if isinstance(publish_config, dict) else None
+    if not isinstance(registry, str):
+        registry = None
     if not registry and config is None:
         return None
     name = manifest.get("name", "")
