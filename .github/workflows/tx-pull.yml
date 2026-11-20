@@ -6,7 +6,7 @@ on:
       transifex_args:
         description: 'Arguments to pass to the Transifex CLI'
         type: string
-        default: 'pull --force --all'
+        default: 'pull --force --all --mode onlytranslated'
       branch:
         description: 'Branch name for the PR'
         type: string
@@ -85,6 +85,22 @@ jobs:
         with:
           token: ${{ secrets.TRANSIFEX_TOKEN }}
           args: ${{ inputs.transifex_args }}
+
+      # In onlytranslated mode, Transifex writes an empty string for each untranslated key in a JSON key-value
+      # file. Removing those keys lets i18next fall back to the base language and then to English (es-419 to es
+      # to en) instead of rendering a blank. The source files are left alone, as their empty values are meant.
+      - name: 🧹 Remove untranslated keys
+        shell: bash
+        run: |
+          sources=$(sed -n 's/^source_file *= *//p' .tx/config)
+          git ls-files --modified --others --exclude-standard -z -- '*.json' |
+            while IFS= read -r -d '' file; do
+              if grep -qxF -- "$file" <<< "$sources"; then
+                continue
+              fi
+              jq 'with_entries(select(.value != ""))' "$file" > "$file.tmp"
+              mv "$file.tmp" "$file"
+            done
 
       - name: 🔑 Generate GitHub App token
         id: app-token
