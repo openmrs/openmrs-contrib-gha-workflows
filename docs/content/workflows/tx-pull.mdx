@@ -33,12 +33,21 @@ jobs:
 
 1. Fails early if only one of `APP_ID` and `APP_PRIVATE_KEY` is set, or if neither App credentials nor `BOT_GH_TOKEN`
    is supplied.
-2. Runs the Transifex CLI with `transifex_args` (by default `pull --force --all`), using the repository's
-   `.tx/config`.
-3. Commits any changes to `branch` and opens or updates a pull request, authenticated as the GitHub App (or with
+2. Runs the Transifex CLI with `transifex_args` (by default `pull --force --all --mode onlytranslated`), using the
+   repository's `.tx/config`.
+3. Removes the keys left empty in the pulled translation files, so untranslated strings are missing rather than blank
+   or English. The source files listed in `.tx/config` are not changed.
+4. Commits any changes to `branch` and opens or updates a pull request, authenticated as the GitHub App (or with
    `BOT_GH_TOKEN`).
-4. When the pull request was created or updated, approves it with the workflow's `github.token` and enables
+5. When the pull request was created or updated, approves it with the workflow's `github.token` and enables
    auto-merge (squash).
+
+<Callout type="info">
+Transifex fills untranslated strings with the English source by default, which stops a regional locale from falling
+back to its base language: an untranslated string in `es_419` would show in English rather than in `es`. Pulling with
+`--mode onlytranslated` and removing the empty keys leaves those strings out, so the app falls back from `es-419` to
+`es` and then to `en`.
+</Callout>
 
 <Callout type="info">
 The pull request must be opened with an App token or a personal access token. A pull request created with
