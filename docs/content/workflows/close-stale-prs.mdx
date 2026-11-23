@@ -20,6 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: read
   pull-requests: write
 
 jobs:
@@ -36,22 +37,36 @@ jobs:
 Each run makes at most 30 GitHub API operations (the `actions/stale` default) and starts again from the first pull
 request. See [Permissions](#permissions) for what this means for a large backlog.
 
+## Message placeholders
+
+`stale-pr-message` and `close-pr-message` can refer to the configured periods with these placeholders:
+
+| Placeholder | Replaced with |
+| --- | --- |
+| `{time-before-stale}` | `days-before-stale` |
+| `{time-before-close}` | `days-before-close` |
+| `{inactive-time-at-close}` | `days-before-stale` plus `days-before-close` |
+
+Periods are written the way the [dayjs `relativeTime` plugin](https://day.js.org/docs/en/display/from-now) writes
+them, so 150 days becomes "5 months" and 30 days "a month". Up to 25 days is written in days. Any other text in braces
+is left as is.
+
 ## OpenMRS defaults
 
 OpenMRS repositories use the defaults: stale after 150 days (about 5 months), closed 30 days later. The default
-messages say so and point contributors to Jira.
+messages use the placeholders above and point contributors to Jira.
 
 ## Outside OpenMRS
 
 <Callout type="warning">
-The default messages mention OpenMRS, Jira and the 5 and 6 month periods. Pass your own `stale-pr-message` and
-`close-pr-message`, and update them whenever you change `days-before-stale` or `days-before-close`.
+The default messages mention OpenMRS and Jira. Pass your own `stale-pr-message` and `close-pr-message`.
 </Callout>
 
 ## Permissions
 
 The job requests `pull-requests: write` to label, comment on and close pull requests in the calling repository, using
-`github.token`. The caller must grant at least that.
+`github.token`, and `contents: read` to check out the script that fills in the message placeholders. The caller must
+grant at least those.
 
 The job does not request `actions: write`, which `actions/stale` uses to save its progress in the Actions cache between
 runs. Without it, every run starts again from the first pull request, so in a repository with a large backlog the
