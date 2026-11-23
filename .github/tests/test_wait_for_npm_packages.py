@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import wait_for_npm_packages as waiter
 
 NPMJS = "https://registry.npmjs.org"
+TARBALL = NPMJS + "/@o/a/-/a-1.0.1-pre.7.tgz"
 
 
 def pkg(name="@o/a", version="1.0.1-pre.7", registry=NPMJS):
@@ -26,6 +27,14 @@ class FakeResponse(io.BytesIO):
     def __init__(self, body, encoding=None):
         super().__init__(body)
         self.headers = {"Content-Encoding": encoding} if encoding else {}
+
+
+class UnreadResponse(FakeResponse):
+    was_read = False
+
+    def read(self, *args):
+        self.was_read = True
+        return super().read(*args)
 
 
 class FakeClock:
@@ -49,7 +58,8 @@ class TestDocumentState(unittest.TestCase):
             return FakeResponse(gzip.compress(body), "gzip") if gzipped else FakeResponse(body)
 
         with patch.object(waiter.urllib.request, "urlopen", urlopen):
-            return waiter.document_state("@o/a", "1.0.1-pre.7", NPMJS + "/", waiter.INSTALL_ACCEPT)
+            self.state, self.entry = waiter.document_state("@o/a", "1.0.1-pre.7", NPMJS + "/", waiter.INSTALL_ACCEPT)
+        return self.state
 
     def http_error(self, code):
         return urllib.error.HTTPError(NPMJS, code, "", {}, None)
@@ -70,6 +80,13 @@ class TestDocumentState(unittest.TestCase):
     def test_listed_when_the_document_has_the_version(self):
         self.assertEqual(self.fetch({"versions": {"1.0.1-pre.7": {}}}), waiter.LISTED)
 
+    def test_returns_the_entry_for_the_version(self):
+        entry = {"dist": {"tarball": TARBALL}}
+        self.fetch({"versions": {"1.0.1-pre.6": {}, "1.0.1-pre.7": entry}})
+        self.assertEqual(self.entry, entry)
+        self.fetch({"versions": {"1.0.1-pre.6": {}}})
+        self.assertIsNone(self.entry)
+
     def test_not_listed_while_the_cached_document_is_older(self):
         self.assertEqual(self.fetch({"versions": {"1.0.1-pre.6": {}}}), waiter.NOT_LISTED)
 
@@ -89,7 +106,7 @@ class TestDocumentState(unittest.TestCase):
                      FakeResponse(gzip.compress(b"{}")[:10] + b"\xff" * 20, "gzip")):
             with self.subTest(body=body.getvalue()), \
                     patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: body):
-                self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT), waiter.UNREACHABLE)
+                self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT)[0], waiter.UNREACHABLE)
 
     def test_unreachable_when_the_body_is_cut_short(self):
         class CutShort(FakeResponse):
@@ -97,23 +114,64 @@ class TestDocumentState(unittest.TestCase):
                 raise http.client.IncompleteRead(b'{"vers', 100)
 
         with patch.object(waiter.urllib.request, "urlopen", lambda r, timeout: CutShort(b"")):
-            self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT), waiter.UNREACHABLE)
+            self.assertEqual(waiter.document_state("@o/a", "1", NPMJS, waiter.INSTALL_ACCEPT)[0], waiter.UNREACHABLE)
+
+
+class TestTarballState(unittest.TestCase):
+    def fetch(self, error=None):
+        def urlopen(request, timeout):
+            self.request = request
+            if error:
+                raise error
+            self.response = UnreadResponse(b"tarball")
+            return self.response
+
+        with patch.object(waiter.urllib.request, "urlopen", urlopen):
+            return waiter.tarball_state(TARBALL)
+
+    def http_error(self, code):
+        return urllib.error.HTTPError(TARBALL, code, "", {}, None)
+
+    def test_gets_the_tarball_without_reading_it(self):
+        self.assertEqual(self.fetch(), waiter.LISTED)
+        self.assertEqual(self.request.full_url, TARBALL)
+        self.assertEqual(self.request.get_method(), "GET")
+        self.assertFalse(self.response.was_read)
+
+    def test_not_found_until_the_tarball_is_served(self):
+        self.assertEqual(self.fetch(error=self.http_error(404)), waiter.NOT_FOUND)
+
+    def test_no_access_when_the_registry_wants_credentials(self):
+        self.assertEqual(self.fetch(error=self.http_error(401)), waiter.NO_ACCESS)
+        self.assertEqual(self.fetch(error=self.http_error(403)), waiter.NO_ACCESS)
+
+    def test_unreachable_on_server_errors_and_dropped_connections(self):
+        self.assertEqual(self.fetch(error=self.http_error(503)), waiter.UNREACHABLE)
+        self.assertEqual(self.fetch(error=OSError("reset")), waiter.UNREACHABLE)
+        self.assertEqual(self.fetch(error=http.client.RemoteDisconnected("")), waiter.UNREACHABLE)
 
 
 class TestListedState(unittest.TestCase):
-    def check(self, abbreviated, full):
-        accepts = []
+    def check(self, abbreviated, full, tarball=waiter.LISTED, entry=None):
+        calls = []
+        entry = {"dist": {"tarball": TARBALL}} if entry is None else entry
 
         def document_state(package, version, registry, accept):
-            accepts.append(accept)
-            return abbreviated if accept == waiter.INSTALL_ACCEPT else full
+            calls.append(accept)
+            state = abbreviated if accept == waiter.INSTALL_ACCEPT else full
+            return state, entry if state == waiter.LISTED else None
 
-        with patch.object(waiter, "document_state", document_state):
-            return waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), accepts
+        def tarball_state(url):
+            calls.append(url)
+            return tarball
 
-    def test_reads_the_abbreviated_document_then_the_full_one_npm_installs_from(self):
+        with patch.object(waiter, "document_state", document_state), \
+                patch.object(waiter, "tarball_state", tarball_state):
+            return waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), calls
+
+    def test_reads_the_abbreviated_document_then_the_full_one_then_the_tarball(self):
         self.assertEqual(self.check(waiter.LISTED, waiter.LISTED),
-                         (waiter.LISTED, [waiter.INSTALL_ACCEPT, "application/json"]))
+                         (waiter.LISTED, [waiter.INSTALL_ACCEPT, "application/json", TARBALL]))
 
     def test_not_listed_until_the_full_document_has_it_too(self):
         def urlopen(request, timeout):
@@ -123,13 +181,39 @@ class TestListedState(unittest.TestCase):
         with patch.object(waiter.urllib.request, "urlopen", urlopen):
             self.assertEqual(waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), "full document not listed")
 
-    def test_names_the_document_that_is_behind(self):
+    def test_not_listed_until_the_tarball_downloads(self):
+        tarball_served = False
+
+        def urlopen(request, timeout):
+            if request.full_url == TARBALL:
+                if not tarball_served:
+                    raise urllib.error.HTTPError(request.full_url, 404, "", {}, None)
+                return FakeResponse(b"")
+            return FakeResponse(json.dumps({"versions": {"1.0.1-pre.7": {"dist": {"tarball": TARBALL}}}}).encode())
+
+        with patch.object(waiter.urllib.request, "urlopen", urlopen):
+            self.assertEqual(waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), "tarball not found")
+            tarball_served = True
+            self.assertEqual(waiter.listed_state("@o/a", "1.0.1-pre.7", NPMJS), waiter.LISTED)
+
+    def test_asks_for_the_tarball_only_once_both_documents_list_the_version(self):
+        self.assertEqual(self.check(waiter.NOT_LISTED, waiter.LISTED)[1], [waiter.INSTALL_ACCEPT])
+        self.assertEqual(self.check(waiter.LISTED, waiter.NOT_LISTED)[1], [waiter.INSTALL_ACCEPT, "application/json"])
+
+    def test_names_what_is_behind(self):
         self.assertEqual(self.check(waiter.NOT_LISTED, waiter.LISTED)[0], "abbreviated document not listed")
         self.assertEqual(self.check(waiter.LISTED, waiter.UNREACHABLE)[0], "full document unreachable")
+        self.assertEqual(self.check(waiter.LISTED, waiter.LISTED, waiter.NOT_FOUND)[0], "tarball not found")
+        self.assertEqual(self.check(waiter.LISTED, waiter.LISTED, waiter.UNREACHABLE)[0], "tarball unreachable")
 
-    def test_no_access_to_either_document_is_not_waited_for(self):
+    def test_listed_without_a_tarball_check_when_the_documents_name_no_tarball(self):
+        self.assertEqual(self.check(waiter.LISTED, waiter.LISTED, entry={}),
+                         (waiter.LISTED, [waiter.INSTALL_ACCEPT, "application/json"]))
+
+    def test_no_access_to_either_document_or_the_tarball_is_not_waited_for(self):
         self.assertEqual(self.check(waiter.NO_ACCESS, waiter.LISTED)[0], waiter.NO_ACCESS)
         self.assertEqual(self.check(waiter.LISTED, waiter.NO_ACCESS)[0], waiter.NO_ACCESS)
+        self.assertEqual(self.check(waiter.LISTED, waiter.LISTED, waiter.NO_ACCESS)[0], waiter.NO_ACCESS)
 
 
 class TestWait(unittest.TestCase):
