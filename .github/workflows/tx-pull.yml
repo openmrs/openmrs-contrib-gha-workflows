@@ -6,7 +6,7 @@ on:
       transifex_args:
         description: 'Arguments to pass to the Transifex CLI'
         type: string
-        default: 'pull --force --all'
+        default: 'pull --force --all --mode onlytranslated'
       branch:
         description: 'Branch name for the PR'
         type: string
@@ -85,6 +85,26 @@ jobs:
         with:
           token: ${{ secrets.TRANSIFEX_TOKEN }}
           args: ${{ inputs.transifex_args }}
+
+      # In onlytranslated mode, Transifex writes an empty value for each untranslated key. Removing those keys
+      # lets i18next and Spring fall back to a less specific locale and then to English instead of showing a
+      # blank. In .properties files, an untranslated value that starts with `:` comes back as `key=: `, so the
+      # pattern treats that as empty too. The source files are left alone, as their empty values are meant.
+      - name: 🧹 Remove untranslated keys
+        shell: bash
+        run: |
+          sources=$(sed -n 's/^source_file *= *//p' .tx/config)
+          git ls-files --modified --others --exclude-standard -z -- '*.json' '*.properties' |
+            while IFS= read -r -d '' file; do
+              if grep -qxF -- "$file" <<< "$sources"; then
+                continue
+              fi
+              case "$file" in
+                *.json) jq 'with_entries(select(.value != ""))' "$file" > "$file.tmp" ;;
+                *.properties) sed -E '/^[^#![:space:]][^=]*=[[:space:]:]*$/d' "$file" > "$file.tmp" ;;
+              esac
+              mv "$file.tmp" "$file"
+            done
 
       - name: 🔑 Generate GitHub App token
         id: app-token
