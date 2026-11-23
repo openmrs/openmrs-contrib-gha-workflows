@@ -86,19 +86,23 @@ jobs:
           token: ${{ secrets.TRANSIFEX_TOKEN }}
           args: ${{ inputs.transifex_args }}
 
-      # In onlytranslated mode, Transifex writes an empty string for each untranslated key in a JSON key-value
-      # file. Removing those keys lets i18next fall back to the base language and then to English (es-419 to es
-      # to en) instead of rendering a blank. The source files are left alone, as their empty values are meant.
+      # In onlytranslated mode, Transifex writes an empty value for each untranslated key. Removing those keys
+      # lets i18next and Spring fall back to a less specific locale and then to English instead of showing a
+      # blank. In .properties files, an untranslated value that starts with `:` comes back as `key=: `, so the
+      # pattern treats that as empty too. The source files are left alone, as their empty values are meant.
       - name: 🧹 Remove untranslated keys
         shell: bash
         run: |
           sources=$(sed -n 's/^source_file *= *//p' .tx/config)
-          git ls-files --modified --others --exclude-standard -z -- '*.json' |
+          git ls-files --modified --others --exclude-standard -z -- '*.json' '*.properties' |
             while IFS= read -r -d '' file; do
               if grep -qxF -- "$file" <<< "$sources"; then
                 continue
               fi
-              jq 'with_entries(select(.value != ""))' "$file" > "$file.tmp"
+              case "$file" in
+                *.json) jq 'with_entries(select(.value != ""))' "$file" > "$file.tmp" ;;
+                *.properties) sed -E '/^[^#![:space:]][^=]*=[[:space:]:]*$/d' "$file" > "$file.tmp" ;;
+              esac
               mv "$file.tmp" "$file"
             done
 
