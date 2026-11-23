@@ -425,6 +425,8 @@ jobs:
         timeout-minutes: 20
         env:
           PACKAGES: ${{ needs.pre_release.outputs.packages }}
+          # Print each line as it happens, so the log shows what the wait is on while it runs.
+          PYTHONUNBUFFERED: '1'
         run: python3 .gha-workflows/.github/scripts/wait_for_npm_packages.py wait
 
       - name: 🔑 Generate GitHub App token
