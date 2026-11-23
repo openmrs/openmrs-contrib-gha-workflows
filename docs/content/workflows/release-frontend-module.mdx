@@ -282,9 +282,10 @@ The dispatch waits until the registry serves the new pre-release of every publis
 for up to 15 minutes. npm's CDN caches package documents for up to five minutes, so a build dispatched straight after
 the publish could still resolve the previous version of `next`. The CDN caches the abbreviated package document, which
 `openmrs assemble` and npx's resolution of `next` read, separately from the full one, which npm's installer reads, so
-the wait checks that both list the new version. If a package is still missing after 15 minutes, the job fails, naming
-the document that is behind, and nothing is dispatched. A registry that needs credentials to read a package is not
-waited on, and the job logs a warning instead.
+the wait checks that both list the new version. A document can list a version before its tarball downloads, so the wait
+then checks the tarball too. If a package is still missing after 15 minutes, the job fails, naming the document or
+tarball that is behind, and nothing is dispatched. A registry that needs credentials to read a package or its tarball
+is not waited on, and the job logs a warning instead.
 
 ## GitHub App or PAT
 

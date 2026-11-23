@@ -7,7 +7,9 @@ caches each document separately for up to five minutes, so a build dispatched
 straight after a publish can resolve the previous version, or resolve the new one
 and then fail to install it.
 Waiting on the per-version endpoint would not help: it is served uncached and
-answers as soon as the publish lands.
+answers as soon as the publish lands. Once both documents list the version, the
+wait also checks that its tarball downloads, since a document can list a version
+before its tarball is served.
 
 `record` runs after the pre-release version is set and writes the `packages`
 output. `wait` takes that output as PACKAGES, a JSON array of {name, version,
@@ -37,22 +39,43 @@ TIMEOUT = 900
 INTERVAL = 10
 
 LISTED, NOT_LISTED, NO_ACCESS, UNREACHABLE = "listed", "not listed", "no access", "unreachable"
+NOT_FOUND = "not found"
 NOT_CHECKED = "not checked"
 
 
 def listed_state(package, version, registry):
-    """LISTED once both cached documents for `package` list `version`, else the first one's shortfall."""
+    """LISTED once both cached documents for `package` list `version` and its tarball downloads, else the first shortfall."""
+    tarball = None
     for name, accept in DOCUMENTS:
-        state = document_state(package, version, registry, accept)
+        state, entry = document_state(package, version, registry, accept)
         if state == NO_ACCESS:
             return state
         if state != LISTED:
             return f"{name} document {state}"
-    return LISTED
+        tarball = tarball or (entry.get("dist") or {}).get("tarball")
+    # Asked for only after the documents list the version, so the CDN never sees a
+    # request for a tarball before its version is published.
+    state = tarball_state(tarball) if tarball else LISTED
+    return state if state in (LISTED, NO_ACCESS) else f"tarball {state}"
+
+
+def tarball_state(url):
+    """Whether the tarball at `url` downloads."""
+    # A GET, like the one pacote sends, since not every registry answers HEAD.
+    # Only the status matters, so the body is never read.
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=30):
+            return LISTED
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return NOT_FOUND
+        return NO_ACCESS if e.code in (401, 403) else UNREACHABLE
+    except (OSError, ValueError, http.client.HTTPException):
+        return UNREACHABLE
 
 
 def document_state(package, version, registry, accept):
-    """Whether the cached document for `package` sent for `accept` lists `version`."""
+    """Whether the cached document for `package` sent for `accept` lists `version`, with its entry when it does."""
     url = f"{registry.rstrip('/')}/{urllib.parse.quote(package, safe='@')}"
     request = urllib.request.Request(url, headers={"Accept": accept, "Accept-Encoding": "gzip"})
     try:
@@ -63,11 +86,14 @@ def document_state(package, version, registry, accept):
             document = json.loads(body)
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            return NOT_LISTED
-        return NO_ACCESS if e.code in (401, 403) else UNREACHABLE
+            return NOT_LISTED, None
+        return (NO_ACCESS if e.code in (401, 403) else UNREACHABLE), None
     except (OSError, ValueError, EOFError, zlib.error, http.client.HTTPException):
-        return UNREACHABLE
-    return LISTED if version in (document.get("versions") or {}) else NOT_LISTED
+        return UNREACHABLE, None
+    entry = (document.get("versions") or {}).get(version)
+    if entry is None:
+        return NOT_LISTED, None
+    return LISTED, entry if isinstance(entry, dict) else {}
 
 
 def record():
