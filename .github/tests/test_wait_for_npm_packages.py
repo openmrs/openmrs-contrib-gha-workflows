@@ -149,6 +149,7 @@ class TestTarballState(unittest.TestCase):
         self.assertEqual(self.fetch(error=self.http_error(503)), waiter.UNREACHABLE)
         self.assertEqual(self.fetch(error=OSError("reset")), waiter.UNREACHABLE)
         self.assertEqual(self.fetch(error=http.client.RemoteDisconnected("")), waiter.UNREACHABLE)
+        self.assertEqual(self.fetch(error=http.client.BadStatusLine("")), waiter.UNREACHABLE)
 
 
 class TestListedState(unittest.TestCase):
