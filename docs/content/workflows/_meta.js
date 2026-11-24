@@ -3,6 +3,7 @@ export default {
   'release-frontend-module': 'Release frontend module',
   'frontend-pr-title-check': 'Frontend PR title check',
   'frontend-pr-description-check': 'Frontend PR description check',
+  'close-stale-prs': 'Close stale pull requests',
   'build-maven': 'Build Maven project',
   'build-backend-module': 'Build backend module',
   'release-backend-module': 'Release backend module',

@@ -1,0 +1,78 @@
+---
+title: Close stale pull requests
+description: Label inactive pull requests as stale and close them if nothing happens.
+---
+
+import { Callout } from 'nextra/components'
+
+# Close stale pull requests
+
+`close-stale-prs.yml` uses [`actions/stale`](https://github.com/actions/stale) to find pull requests with no recent
+activity. It labels them `Stale` with a comment asking the author whether they are still working on it, then closes
+them if nothing happens. Issues are not touched.
+
+## Usage
+
+```yaml filename=".github/workflows/stale.yml"
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  stale:
+    uses: openmrs/openmrs-contrib-gha-workflows/.github/workflows/close-stale-prs.yml@main
+```
+
+## What it does
+
+1. Labels a pull request `Stale` and posts `stale-pr-message` once it has had no activity for `days-before-stale` days.
+2. Closes it and posts `close-pr-message` after a further `days-before-close` days, unless the label was removed or
+   the pull request saw activity in the meantime. Either resets the count.
+
+Each run makes at most 30 GitHub API operations (the `actions/stale` default) and starts again from the first pull
+request. See [Permissions](#permissions) for what this means for a large backlog.
+
+## Message placeholders
+
+`stale-pr-message` and `close-pr-message` can refer to the configured periods with these placeholders:
+
+| Placeholder | Replaced with |
+| --- | --- |
+| `{time-before-stale}` | `days-before-stale` |
+| `{time-before-close}` | `days-before-close` |
+| `{inactive-time-at-close}` | `days-before-stale` plus `days-before-close` |
+
+Periods are written the way the [dayjs `relativeTime` plugin](https://day.js.org/docs/en/display/from-now) writes
+them, so 150 days becomes "5 months" and 30 days "a month". Up to 25 days is written in days. Any other text in braces
+is left as is.
+
+## OpenMRS defaults
+
+OpenMRS repositories use the defaults: stale after 150 days (about 5 months), closed 30 days later. The default
+messages use the placeholders above and point contributors to Jira.
+
+## Outside OpenMRS
+
+<Callout type="warning">
+The default messages mention OpenMRS and Jira. Pass your own `stale-pr-message` and `close-pr-message`.
+</Callout>
+
+## Permissions
+
+The job requests `pull-requests: write` to label, comment on and close pull requests in the calling repository, using
+`github.token`, and `contents: read` to check out the script that fills in the message placeholders. The caller must
+grant at least those.
+
+The job does not request `actions: write`, which `actions/stale` uses to save its progress in the Actions cache between
+runs. Without it, every run starts again from the first pull request, so in a repository with a large backlog the
+same pull requests can use up each run's operations and later ones may never be processed. Only a warning is logged.
+openmrs-core runs this way without problems.
+
+## Inputs
+
+<WorkflowReference id="workflows/close-stale-prs" section="inputs" />

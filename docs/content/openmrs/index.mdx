@@ -64,7 +64,8 @@ jobs:
 - The `release` job's `permissions` must include everything the release workflow's jobs request: a called workflow
   cannot be granted more than its caller.
 - Add [PR title](/workflows/frontend-pr-title-check) and [PR description](/workflows/frontend-pr-description-check)
-  checks and [translation sync](/workflows/tx-pull) as separate jobs or workflows.
+  checks, [translation sync](/workflows/tx-pull) and [stale pull request cleanup](/workflows/close-stale-prs) as
+  separate jobs or workflows.
 
 ## Backend (Maven) modules
 
